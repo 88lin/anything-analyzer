@@ -223,17 +223,19 @@ function App(): React.ReactElement {
 
   // Pill button style for capture controls in browser address bar
   const pillStyle: React.CSSProperties = {
-    padding: '4px 10px',
+    padding: '5px 14px',
     borderRadius: 6,
-    fontSize: 'var(--font-size-3xs)',
+    fontSize: 'var(--font-size-2xs)',
     cursor: 'pointer',
     border: 'none',
     whiteSpace: 'nowrap',
     lineHeight: 1.2,
+    fontWeight: 600,
+    fontFamily: 'var(--font-sans)',
   }
-  const pillActive: React.CSSProperties = { ...pillStyle, background: 'var(--color-success-bg)', color: 'var(--color-success)' }
+  const pillActive: React.CSSProperties = { ...pillStyle, background: 'var(--color-success-bg)', color: 'var(--color-success)', border: '1px solid var(--color-success-border)' }
   const pillDefault: React.CSSProperties = { ...pillStyle, background: 'var(--color-active)', color: 'var(--text-muted)' }
-  const pillStart: React.CSSProperties = { ...pillStyle, background: 'var(--color-success-bg)', color: 'var(--color-success)' }
+  const pillStart: React.CSSProperties = { ...pillStyle, background: 'var(--color-success)', color: '#000', padding: '5px 18px' }
 
   // Build capture slot for BrowserPanel
   const buildCaptureSlot = () => {
@@ -327,7 +329,7 @@ function App(): React.ReactElement {
     <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: 1 }}>
       {currentSession ? (
         <>
-          {/* Sub-tabs: Requests / Hooks / Storage */}
+          {/* Sub-tabs: Requests / Hooks / Storage + Capture controls */}
           <div style={{
             height: 36,
             background: 'var(--color-bar)',
@@ -356,6 +358,16 @@ function App(): React.ReactElement {
             >
               {t('data.storage')} <span style={inspectorTabCountStyle}>{snapshots.length}</span>
             </button>
+
+            {/* Spacer */}
+            <div style={{ flex: 1 }} />
+
+            {/* Capture controls in Inspector */}
+            {currentSessionId && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {buildCaptureSlot()}
+              </div>
+            )}
           </div>
 
           {/* Tab content */}

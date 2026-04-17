@@ -16,22 +16,23 @@ interface SessionListProps {
 }
 
 /**
- * Compute session bar color based on status:
- * - running/paused → green (#4ade80) — capturing
- * - stopped with target_url → blue (#60a5fa) — pending analysis
- * - stopped no url → gray (#333) — idle
+ * Session status dot color
  */
-function getBarColor(session: Session): string {
-  if (session.status === 'running' || session.status === 'paused') return 'var(--color-success)'
-  if (session.status === 'stopped' && session.target_url) return 'var(--color-info)'
+function getDotColor(session: Session): string {
+  if (session.status === 'running') return 'var(--color-success)'
+  if (session.status === 'paused') return 'var(--color-warning)'
   return 'var(--text-disabled)'
 }
 
-function getStatusSymbol(session: Session): { symbol: string; color: string; label: string } {
-  if (session.status === 'running') return { symbol: '●', color: 'var(--color-success)', label: '捕获中' }
-  if (session.status === 'paused') return { symbol: '⏸', color: 'var(--color-warning)', label: '已暂停' }
-  if (session.status === 'stopped' && session.target_url) return { symbol: '◎', color: 'var(--color-info)', label: '待分析' }
-  return { symbol: '■', color: 'var(--text-muted)', label: '已停止' }
+function getStatusInfo(session: Session): { symbol: string; color: string; labelKey: string } {
+  if (session.status === 'running') return { symbol: '●', color: 'var(--color-success)', labelKey: 'capture.running' }
+  if (session.status === 'paused') return { symbol: '⏸', color: 'var(--color-warning)', labelKey: 'capture.paused' }
+  return { symbol: '■', color: 'var(--text-muted)', labelKey: 'capture.stopped' }
+}
+
+function extractDomain(url: string): string {
+  if (!url) return ''
+  try { return new URL(url).hostname } catch { return url }
 }
 
 const SessionList: React.FC<SessionListProps> = ({
@@ -117,8 +118,13 @@ const SessionList: React.FC<SessionListProps> = ({
 
   return (
     <div className={styles.container}>
-      {/* Section Label */}
-      <div className={styles.sectionLabel}>SESSIONS</div>
+      {/* Section header with count */}
+      <div className={styles.sectionHeader}>
+        <span className={styles.sectionLabel}>SESSIONS</span>
+        {sessions.length > 0 && (
+          <span className={styles.sectionCount}>{sessions.length}</span>
+        )}
+      </div>
 
       {/* Session list */}
       <div className={styles.list}>
@@ -128,8 +134,9 @@ const SessionList: React.FC<SessionListProps> = ({
           sessions.map((session) => {
             const isActive = session.id === currentSessionId
             const isHovered = session.id === hoveredId
-            const barColor = getBarColor(session)
-            const status = getStatusSymbol(session)
+            const dotColor = getDotColor(session)
+            const status = getStatusInfo(session)
+            const domain = extractDomain(session.target_url)
             return (
               <div
                 key={session.id}
@@ -138,15 +145,19 @@ const SessionList: React.FC<SessionListProps> = ({
                 onMouseEnter={() => setHoveredId(session.id)}
                 onMouseLeave={() => setHoveredId(null)}
               >
-                <div className={styles.sessionBar} style={{ background: barColor }} />
+                <div
+                  className={`${styles.statusDot} ${session.status === 'running' ? styles.statusDotRunning : ''}`}
+                  style={{ background: dotColor, color: dotColor }}
+                />
                 <div className={styles.sessionInfo}>
                   <div className={styles.sessionName}>{session.name}</div>
                   <div className={styles.sessionMeta}>
-                    <span style={{ color: status.color }}>{status.symbol} {status.label}</span>
+                    <span style={{ color: status.color }}>{status.symbol} {t(status.labelKey as any)}</span>
                     {isActive && activeRequestCount > 0 && (
                       <span className={styles.sessionCount}> · {activeRequestCount} reqs</span>
                     )}
                   </div>
+                  {domain && <div className={styles.sessionUrl}>{domain}</div>}
                 </div>
 
                 {isHovered && (
@@ -173,7 +184,7 @@ const SessionList: React.FC<SessionListProps> = ({
       {/* Bottom: Settings + Version */}
       <div className={styles.sidebarBottom}>
         <div className={styles.bottomBtn} onClick={onOpenSettings}>⚙ {t('settings.title')}</div>
-        <div className={styles.versionText}>v3.1.0</div>
+        <div className={styles.versionText}>v3.2.0</div>
       </div>
 
       {/* Create session modal */}
