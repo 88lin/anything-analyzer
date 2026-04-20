@@ -91,6 +91,42 @@ export interface AnalysisReport {
   filter_completion_tokens: number | null;
 }
 
+// ---- AI Request Log ----
+
+export interface AiRequestLog {
+  id: number;
+  session_id: string | null;
+  report_id: string | null;
+  type: 'analyze' | 'chat' | 'filter';
+  provider: string;
+  model: string;
+  request_url: string;
+  request_method: string;
+  request_headers: string;   // JSON string, API key masked
+  request_body: string;
+  status_code: number | null;
+  response_headers: string | null;
+  response_body: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  duration_ms: number | null;
+  error: string | null;
+  created_at: number;
+}
+
+/** Data passed from LLMRouter intercept (without context fields filled by caller) */
+export interface AiRequestLogData {
+  request_url: string;
+  request_method: string;
+  request_headers: string;
+  request_body: string;
+  status_code: number | null;
+  response_headers: string | null;
+  response_body: string | null;
+  duration_ms: number | null;
+  error: string | null;
+}
+
 // ---- Request Summary (Phase 1 预过滤) ----
 
 /** Phase 1 轻量请求摘要，用于 AI 相关性过滤 */
@@ -367,6 +403,11 @@ export const IPC_CHANNELS = {
   DATA_CLEAR: "data:clear",
   DATA_EXPORT_REQUESTS: "data:exportRequests",
 
+  // AI Request Log
+  DATA_AI_LOGS: "data:aiRequestLogs",
+  DATA_AI_LOGS_ALL: "data:aiRequestLogsAll",
+  DATA_AI_LOG_DETAIL: "data:aiRequestLogDetail",
+
   // AI
   AI_ANALYZE: "ai:analyze",
   AI_PROGRESS: "ai:progress",
@@ -527,6 +568,11 @@ export interface ElectronAPI {
 
   // Export requests
   exportRequests: (sessionId: string) => Promise<boolean>;
+
+  // AI Request Logs
+  getAiRequestLogs: (sessionId: string) => Promise<AiRequestLog[]>;
+  getAiRequestLogsAll: (limit: number, offset: number) => Promise<AiRequestLog[]>;
+  getAiRequestLogDetail: (id: number) => Promise<AiRequestLog | null>;
 
   // Proxy
   getProxyConfig: () => Promise<ProxyConfig | null>;
