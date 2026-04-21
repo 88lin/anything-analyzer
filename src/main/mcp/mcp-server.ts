@@ -441,6 +441,42 @@ function registerTools(server: McpServer, deps: MCPServerDeps): void {
     },
   );
 
+  server.registerTool(
+    "browser_screenshot",
+    {
+      description:
+        "Capture a screenshot of the current active browser tab. Returns a PNG image.",
+    },
+    async () => {
+      const webContents = windowManager.getTabManager()?.getActiveWebContents();
+      if (!webContents) throw new Error("Browser not ready");
+      const image = await webContents.capturePage();
+      const base64 = image.toPNG().toString("base64");
+      return {
+        content: [{ type: "image" as const, data: base64, mimeType: "image/png" }],
+      };
+    },
+  );
+
+  server.registerTool(
+    "cdp_send_command",
+    {
+      description:
+        "Send a raw Chrome DevTools Protocol (CDP) command to the active browser tab. " +
+        "Requires an active capture session with CDP attached. " +
+        "Supports all CDP domains: Page, DOM, Runtime, Network, Emulation, Input, etc. " +
+        "See https://chromedevtools.github.io/devtools-protocol/ for available methods.",
+      inputSchema: z.object({
+        method: z.string().describe("CDP method name, e.g. 'Page.captureScreenshot', 'Runtime.evaluate', 'DOM.getDocument'"),
+        params: z.record(z.unknown()).optional().describe("CDP method parameters as a JSON object"),
+      }),
+    },
+    async ({ method, params }) => {
+      const result = await sessionManager.sendCdpCommand(method, params as Record<string, unknown> | undefined);
+      return text(result);
+    },
+  );
+
   // -- Data Query --
 
   server.registerTool(
@@ -453,6 +489,49 @@ function registerTools(server: McpServer, deps: MCPServerDeps): void {
     async ({ sessionId }) => {
       const requests = requestsRepo.findBySession(sessionId);
       // Trim large bodies to keep response manageable
+      const trimmed = requests.map((r) => ({
+        id: r.id,
+        sequence: r.sequence,
+        method: r.method,
+        url: r.url,
+        status_code: r.status_code,
+        content_type: r.content_type,
+        duration_ms: r.duration_ms,
+        request_body: r.request_body
+          ? r.request_body.length > 2000
+            ? r.request_body.substring(0, 2000) + "..."
+            : r.request_body
+          : null,
+        response_body: r.response_body
+          ? r.response_body.length > 2000
+            ? r.response_body.substring(0, 2000) + "..."
+            : r.response_body
+          : null,
+      }));
+      return text(trimmed);
+    },
+  );
+
+  server.registerTool(
+    "filter_requests",
+    {
+      description:
+        "Filter captured HTTP requests for a session by method, domain, status code, content type, or URL pattern. Returns matching requests with trimmed bodies.",
+      inputSchema: z.object({
+        sessionId: z.string(),
+        method: z.string().optional().describe("HTTP method filter, e.g. GET, POST"),
+        domain: z.string().optional().describe("Domain/host to match in URL"),
+        statusCode: z.number().optional().describe("Exact status code, e.g. 200, 404"),
+        statusRange: z.string().optional().describe("Status code range: 2xx, 3xx, 4xx, 5xx"),
+        contentType: z.string().optional().describe("Content-Type contains match, e.g. json, html"),
+        urlPattern: z.string().optional().describe("URL substring match"),
+        limit: z.number().optional().describe("Max results to return (default 50)"),
+      }),
+    },
+    async ({ sessionId, method, domain, statusCode, statusRange, contentType, urlPattern, limit }) => {
+      const requests = requestsRepo.findBySessionFiltered(sessionId, {
+        method, domain, statusCode, statusRange, contentType, urlPattern, limit,
+      });
       const trimmed = requests.map((r) => ({
         id: r.id,
         sequence: r.sequence,

@@ -628,4 +628,17 @@ export class SessionManager {
   getCurrentSessionId(): string | null {
     return this.currentSessionId;
   }
+
+  /**
+   * Send a raw CDP command to the active tab's debugger.
+   * Requires an active capture session with CDP attached.
+   */
+  async sendCdpCommand(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (!this.tabManager) throw new Error("No active capture session");
+    const activeTab = this.tabManager.getActiveTab();
+    if (!activeTab) throw new Error("No active tab");
+    const bundle = this.tabCaptures.get(activeTab.id);
+    if (!bundle) throw new Error("CDP not attached to active tab");
+    return bundle.cdp.sendCommand(method, params || {});
+  }
 }

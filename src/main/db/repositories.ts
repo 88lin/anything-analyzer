@@ -128,6 +128,59 @@ export class RequestsRepo {
   deleteBySession(sessionId: string): void {
     this.stmts.deleteBySession.run(sessionId)
   }
+
+  /**
+   * Find requests with dynamic filtering conditions.
+   */
+  findBySessionFiltered(sessionId: string, filters: {
+    method?: string
+    domain?: string
+    statusCode?: number
+    statusRange?: string
+    contentType?: string
+    urlPattern?: string
+    limit?: number
+  }): CapturedRequest[] {
+    const conditions: string[] = ['session_id = ?']
+    const params: unknown[] = [sessionId]
+
+    if (filters.method) {
+      conditions.push('method = ?')
+      params.push(filters.method.toUpperCase())
+    }
+
+    if (filters.domain) {
+      conditions.push('url LIKE ?')
+      params.push(`%${filters.domain}%`)
+    }
+
+    if (filters.statusCode != null) {
+      conditions.push('status_code = ?')
+      params.push(filters.statusCode)
+    } else if (filters.statusRange) {
+      const prefix = filters.statusRange.charAt(0)
+      if (/^[1-5]$/.test(prefix)) {
+        conditions.push('status_code >= ? AND status_code < ?')
+        params.push(Number(prefix) * 100, (Number(prefix) + 1) * 100)
+      }
+    }
+
+    if (filters.contentType) {
+      conditions.push('content_type LIKE ?')
+      params.push(`%${filters.contentType}%`)
+    }
+
+    if (filters.urlPattern) {
+      conditions.push('url LIKE ?')
+      params.push(`%${filters.urlPattern}%`)
+    }
+
+    const limit = filters.limit && filters.limit > 0 ? filters.limit : 50
+    const sql = `SELECT * FROM requests WHERE ${conditions.join(' AND ')} ORDER BY sequence ASC LIMIT ?`
+    params.push(limit)
+
+    return this.db.prepare(sql).all(...params) as CapturedRequest[]
+  }
 }
 
 // ============================================================
