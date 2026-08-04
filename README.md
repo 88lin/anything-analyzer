@@ -263,7 +263,7 @@ Thanks to everyone on [LinuxDo](https://linux.do/) for their support!
 | <img width="457" height="365" alt="image" title="心里咨询服务" src="https://github.com/user-attachments/assets/d31260dc-232d-44b7-a814-29cb201068cf" />|**遇到难题，不必一个人扛** <br/>提供一对一心理支持与家庭关系咨询，擅长：<br/>• 情绪困扰与压力疏导<br/> • 家庭/亲密关系矛盾分析与调解<br/> • 生活重大决策的理性梳理与方案制定<br/> 倾听、梳理、出方案——陪你找到下一步的方向<br/> 电话/微信: 19117443889|
 | <a href="https://bloome.im/app?ref=Mouseww&utm_medium=github&utm_source=Mouseww-anything-analyzer-ivor-202607"><img src="resources/bloome-home.png" width="260" alt="Bloome"></a> | 想用人工智能分析数据？Bloome 让多个 AI 代理（Claude、ChatGPT、DeepSeek 等）在一次对话中协作——无需设置，在云端运行，可在网页和移动设备上使用，而且您可以与整个团队共享已配置的代理。<br>👉 试试 Bloome：**[Bloome_im](https://bloome.im/app?ref=Mouseww&utm_medium=github&utm_source=Mouseww-anything-analyzer-ivor-202607)** |
 | <a href="https://doloffer.com/friend/Pa34D0CG"><img src="resources/doloffer-logo.png" width="180" alt="Doloffer"></a> | **[Doloffer](https://doloffer.com/friend/Pa34D0CG)** — GPT / Claude 真**正版*会员订阅，比官网便宜很多的优惠价，我自己也在用，裂墙推荐。<br>📖 [使用指南](https://github.com/Doloffer-g/guide) \| 🎁 优惠码：`Al8888`（享 9 折） |
-| <a href="https://www.swiftproxy.net/?code=BYQBRGQD3"><img width="1024" height="300" alt="3b3d9abc849f8249e00730b5c6e1ffd0" src="https://github.com/user-attachments/assets/d59e0196-0091-4a45-862e-f5b21775fdb0"></a> | **[Swiftproxy](https://www.swiftproxy.net/?code=BYQBRGQD3)** —— 高质量住宅代理服务，覆盖全球190+国家，拥有8000万+动态住宅IP，支持高匿名、稳定连接，流量不过期，并提供免费测试。适用于数据采集、AI自动化、浏览器模拟及各类数据分析场景。 \| 🎁 优惠码：`PROXY90`（享 9 折） |
+
 
 ---
 
