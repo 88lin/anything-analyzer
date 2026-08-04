@@ -39,6 +39,20 @@
   pointer-events: none;
 }
 
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.icon > svg {
+  display: block;
+  overflow: hidden;
+}
+
 /* Size: small */
 .sm {
   height: 24px;

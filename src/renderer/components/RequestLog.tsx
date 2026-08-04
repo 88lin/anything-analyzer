@@ -1,7 +1,13 @@
-import React, { useMemo, useCallback, useState } from 'react'
-import { VirtualTable } from '../ui'
-import type { VTColumn, VTRowSelection } from '../ui'
+import React, { useMemo, useCallback, useDeferredValue, useRef, useState } from 'react'
+import { VirtualTable } from '../ui/VirtualTable'
+import type { VTColumn, VTRowSelection } from '../ui/VirtualTable'
 import type { CapturedRequest } from '@shared/types'
+import {
+  filterIndexedRequests,
+  reuseEqualFilterOptions,
+  updateRequestLogIndex,
+} from './RequestLog.index'
+import type { RequestFilterOption, RequestLogIndex, RequestLogRow } from './RequestLog.index'
 import styles from './RequestLog.module.css'
 
 interface RequestLogProps {
@@ -23,6 +29,22 @@ const METHOD_COLORS: Record<string, string> = {
   OPTIONS: 'var(--text-muted)',
 }
 
+const SOURCE_FILTERS: RequestFilterOption[] = [
+  { text: 'CDP', value: 'cdp' },
+  { text: 'Proxy', value: 'proxy' },
+]
+
+const MUTED_NUMBER_STYLE: React.CSSProperties = {
+  color: 'var(--text-muted)',
+  fontVariantNumeric: 'tabular-nums',
+}
+
+const ELLIPSIS_STYLE: React.CSSProperties = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+}
+
 // Color for status codes
 function getStatusColor(code: number | null): string {
   if (code === null) return 'var(--text-muted)'
@@ -33,58 +55,39 @@ function getStatusColor(code: number | null): string {
   return 'var(--text-muted)'
 }
 
-function extractPath(url: string): string {
-  try {
-    const parsed = new URL(url)
-    return parsed.pathname + parsed.search
-  } catch {
-    return url
-  }
-}
-
-function extractHost(url: string): string {
-  try {
-    return new URL(url).host
-  } catch {
-    return url
-  }
+function useStableFilterOptions(values: string[]): RequestFilterOption[] {
+  const previousRef = useRef<RequestFilterOption[]>([])
+  return useMemo(() => {
+    const next = reuseEqualFilterOptions(previousRef.current, values)
+    previousRef.current = next
+    return next
+  }, [values])
 }
 
 const RequestLog: React.FC<RequestLogProps> = ({ requests, selectedId, onSelect, selectedSeqs, onSelectedSeqsChange }) => {
   const [searchText, setSearchText] = useState('')
+  const deferredSearchText = useDeferredValue(searchText)
+  const requestIndexRef = useRef<RequestLogIndex | null>(null)
 
-  // Pre-filter by search text only (method filter now handled by VirtualTable column filter)
-  const filteredRequests = useMemo(() => {
-    if (!searchText.trim()) return requests
-    const q = searchText.trim().toLowerCase()
-    return requests.filter(r => r.url.toLowerCase().includes(q))
-  }, [requests, searchText])
-
-  // Collect unique methods for column filter
-  const methodFilters = useMemo(() => {
-    const methods = new Set(requests.map(r => r.method.toUpperCase()))
-    return Array.from(methods).sort().map(m => ({ text: m, value: m }))
+  const requestIndex = useMemo(() => {
+    const next = updateRequestLogIndex(requestIndexRef.current, requests)
+    requestIndexRef.current = next
+    return next
   }, [requests])
+  const filteredRequests = useMemo(
+    () => filterIndexedRequests(requestIndex.rows, deferredSearchText),
+    [deferredSearchText, requestIndex.rows],
+  )
+  const methodFilters = useStableFilterOptions(requestIndex.methods)
+  const domainFilters = useStableFilterOptions(requestIndex.domains)
 
-  // Collect unique domains for column filter
-  const domainFilters = useMemo(() => {
-    const domains = new Set(requests.map(r => extractHost(r.url)))
-    return Array.from(domains).sort().map(d => ({ text: d, value: d }))
-  }, [requests])
-
-  // Collect unique sources for column filter
-  const sourceFilters = useMemo(() => [
-    { text: 'CDP', value: 'cdp' },
-    { text: 'Proxy', value: 'proxy' },
-  ], [])
-
-  const columns: VTColumn<CapturedRequest>[] = useMemo(() => [
+  const columns: VTColumn<RequestLogRow>[] = useMemo(() => [
     {
       key: 'sequence',
       title: '#',
       dataIndex: 'sequence',
       width: 50,
-      render: (val) => <span style={{ color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{val as number}</span>,
+      render: (val) => <span style={MUTED_NUMBER_STYLE}>{val as number}</span>,
       sorter: (a, b) => a.sequence - b.sequence,
     },
     {
@@ -93,33 +96,33 @@ const RequestLog: React.FC<RequestLogProps> = ({ requests, selectedId, onSelect,
       dataIndex: 'method',
       width: 100,
       filters: methodFilters,
-      onFilter: (value, record) => record.method.toUpperCase() === value,
+      onFilter: (value, record) => record.method === value,
       render: (val) => {
-        const m = (val as string).toUpperCase()
+        const m = val as string
         return <span style={{ color: METHOD_COLORS[m] || 'var(--text-muted)', fontWeight: 600 }}>{m}</span>
       },
     },
     {
       key: 'domain',
       title: 'Domain',
-      dataIndex: 'url',
+      dataIndex: 'host',
       width: 180,
       filters: domainFilters,
       filterSearch: true,
-      onFilter: (value, record) => extractHost(record.url) === value,
-      render: (_val, record) => (
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={extractHost(record.url)}>
-          {extractHost(record.url)}
+      onFilter: (value, record) => record.host === value,
+      render: (val) => (
+        <span style={ELLIPSIS_STYLE} title={val as string}>
+          {val as string}
         </span>
       ),
     },
     {
       key: 'url',
       title: 'Path',
-      dataIndex: 'url',
-      render: (_val, record) => (
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={record.url}>
-          {extractPath(record.url)}
+      dataIndex: 'path',
+      render: (val, record) => (
+        <span style={ELLIPSIS_STYLE} title={record.url}>
+          {val as string}
         </span>
       ),
     },
@@ -150,10 +153,10 @@ const RequestLog: React.FC<RequestLogProps> = ({ requests, selectedId, onSelect,
       title: 'Source',
       dataIndex: 'source',
       width: 90,
-      filters: sourceFilters,
-      onFilter: (value, record) => (record.source || 'cdp') === value,
+      filters: SOURCE_FILTERS,
+      onFilter: (value, record) => record.source === value,
       render: (val) => {
-        const src = (val as string) || 'cdp'
+        const src = val as string
         const isProxy = src === 'proxy'
         return (
           <span className={isProxy ? styles.srcProxy : styles.srcCdp}>
@@ -162,19 +165,21 @@ const RequestLog: React.FC<RequestLogProps> = ({ requests, selectedId, onSelect,
         )
       },
     },
-  ], [methodFilters, domainFilters, sourceFilters])
+  ], [methodFilters, domainFilters])
 
-  const handleRow = useCallback((record: CapturedRequest) => ({
-    onClick: () => onSelect(record),
+  const handleRow = useCallback((record: RequestLogRow) => ({
+    onClick: () => onSelect(record.request),
     className: record.id === selectedId ? 'vtRowHighlight' : '',
   }), [selectedId, onSelect])
 
-  const rowSelection: VTRowSelection<CapturedRequest> = useMemo(() => ({
+  const handleSelectionChange = useCallback((_keys: (string | number)[], rows: RequestLogRow[]) => {
+    onSelectedSeqsChange(rows.map(row => row.sequence))
+  }, [onSelectedSeqsChange])
+
+  const rowSelection: VTRowSelection<RequestLogRow> = useMemo(() => ({
     selectedKeys: selectedSeqs,
-    onChange: (_keys, rows) => {
-      onSelectedSeqsChange(rows.map(r => r.sequence))
-    },
-  }), [selectedSeqs, onSelectedSeqsChange])
+    onChange: handleSelectionChange,
+  }), [handleSelectionChange, selectedSeqs])
 
   return (
     <div className={styles.container}>
@@ -192,7 +197,7 @@ const RequestLog: React.FC<RequestLogProps> = ({ requests, selectedId, onSelect,
       </div>
 
       {/* Request list with column headers and filters */}
-      <VirtualTable<CapturedRequest>
+      <VirtualTable<RequestLogRow>
         columns={columns}
         data={filteredRequests}
         rowKey="sequence"

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 
 import Titlebar from './components/Titlebar'
 import type { AppView } from './components/Titlebar'
@@ -14,6 +14,11 @@ import RequestDetail from './components/RequestDetail'
 import HookLog from './components/HookLog'
 import StorageView from './components/StorageView'
 import ReportView from './components/ReportView'
+import {
+  buildContextUsageSnapshot,
+  estimateMessagesTokensByContent,
+} from '@shared/token-estimate'
+import { stripToolContext } from '@shared/types'
 import InteractionLog from './components/InteractionLog'
 import { useSession } from './hooks/useSession'
 import { useCapture } from './hooks/useCapture'
@@ -118,6 +123,37 @@ function App(): React.ReactElement {
   const placeholderRef = useRef<HTMLDivElement>(null)
 
   const { requests, hooks, snapshots, reports, interactions, isAnalyzing, analysisError, streamingContent, startAnalysis, cancelAnalysis, chatHistory, isChatting, chatError, sendFollowUp, clearCaptureData } = useCapture(currentSessionId)
+
+  const [budgetCfg, setBudgetCfg] = useState({
+    maxContextTokens: 200_000,
+    reserveCompletionTokens: 8_192,
+    compressionPeak: 0.85,
+  })
+
+  useEffect(() => {
+    let alive = true
+    window.electronAPI.getLLMConfig().then((config) => {
+      if (!alive || !config?.contextBudget) return
+      const b = config.contextBudget
+      setBudgetCfg({
+        maxContextTokens: b.maxContextTokens ?? 200_000,
+        reserveCompletionTokens: b.reserveCompletionTokens ?? 8_192,
+        compressionPeak: b.compressionPeak ?? 0.85,
+      })
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  const contextUsage = useMemo(() => {
+    const messages = chatHistory.map((m) => ({ content: stripToolContext(m.content) }))
+    if (streamingContent) messages.push({ content: streamingContent })
+    if (messages.length === 0 && reports[0]?.report_content) {
+      messages.push({ content: reports[0].report_content })
+    }
+    const used = estimateMessagesTokensByContent(messages)
+    return buildContextUsageSnapshot(used, budgetCfg)
+  }, [chatHistory, streamingContent, reports, budgetCfg])
+
 
   const selectedRequest = requests.find(r => r.id === selectedRequestId) || null
 
@@ -578,6 +614,7 @@ function App(): React.ReactElement {
           sessionName={currentSession?.name}
           requests={requests}
           hooks={hooks}
+          contextUsage={contextUsage}
         />
       ) : (
         renderEmptyGuide()
@@ -642,6 +679,8 @@ function App(): React.ReactElement {
         activeView={activeView}
         llmModel={reports[0]?.llm_model}
         tokenCount={reports[0] ? (reports[0].prompt_tokens ?? 0) + (reports[0].completion_tokens ?? 0) : undefined}
+        contextUsageRatio={activeView === 'report' ? contextUsage.usageRatio : undefined}
+        contextNearPeak={activeView === 'report' ? contextUsage.nearPeak || contextUsage.overPeak : undefined}
       />
 
       {/* Settings modal */}

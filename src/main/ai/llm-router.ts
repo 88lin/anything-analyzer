@@ -214,10 +214,28 @@ function delayWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
  * Supports OpenAI, Anthropic, and OpenAI-compatible APIs.
  */
 export class LLMRouter {
+  private readonly responseLogIds = new WeakMap<Response, number>();
+
   constructor(
     private config: LLMProviderConfig,
-    private onRequestComplete?: (log: AiRequestLogData) => void,
+    private onRequestComplete?: (log: AiRequestLogData) => number | void,
+    private onRequestUsage?: (logId: number, promptTokens: number, completionTokens: number) => void,
   ) {}
+
+  private attachLogId(response: Response, logId: number | void): Response {
+    if (typeof logId === "number") this.responseLogIds.set(response, logId);
+    return response;
+  }
+
+  private recordResponseUsage(
+    response: Response,
+    promptTokens: number,
+    completionTokens: number,
+  ): void {
+    const logId = this.responseLogIds.get(response);
+    if (logId === undefined) return;
+    this.onRequestUsage?.(logId, promptTokens, completionTokens);
+  }
 
   /**
    * Safely parse JSON from a fetch Response.
@@ -363,8 +381,11 @@ export class LLMRouter {
         throw new Error(`LLM 响应格式异常: 缺少 choices 字段 — ${JSON.stringify(data).slice(0, 200)}`);
       }
 
-      totalPromptTokens += data.usage?.prompt_tokens || 0;
-      totalCompletionTokens += data.usage?.completion_tokens || 0;
+      const roundPromptTokens = data.usage?.prompt_tokens || 0;
+      const roundCompletionTokens = data.usage?.completion_tokens || 0;
+      totalPromptTokens += roundPromptTokens;
+      totalCompletionTokens += roundCompletionTokens;
+      this.recordResponseUsage(response, roundPromptTokens, roundCompletionTokens);
 
       const choice = data.choices[0];
       if (!choice) throw new Error("No response from LLM");
@@ -487,8 +508,11 @@ export class LLMRouter {
         usage?: { input_tokens: number; output_tokens: number };
       }>(response);
 
-      totalPromptTokens += data.usage?.input_tokens || 0;
-      totalCompletionTokens += data.usage?.output_tokens || 0;
+      const roundPromptTokens = data.usage?.input_tokens || 0;
+      const roundCompletionTokens = data.usage?.output_tokens || 0;
+      totalPromptTokens += roundPromptTokens;
+      totalCompletionTokens += roundCompletionTokens;
+      this.recordResponseUsage(response, roundPromptTokens, roundCompletionTokens);
 
       if (!Array.isArray(data.content)) {
         throw new Error(`LLM 响应格式异常: 缺少 content 字段 — ${JSON.stringify(data).slice(0, 200)}`);
@@ -609,8 +633,11 @@ export class LLMRouter {
         usage?: { input_tokens: number; output_tokens: number };
       }>(response);
 
-      totalPromptTokens += data.usage?.input_tokens || 0;
-      totalCompletionTokens += data.usage?.output_tokens || 0;
+      const roundPromptTokens = data.usage?.input_tokens || 0;
+      const roundCompletionTokens = data.usage?.output_tokens || 0;
+      totalPromptTokens += roundPromptTokens;
+      totalCompletionTokens += roundCompletionTokens;
+      this.recordResponseUsage(response, roundPromptTokens, roundCompletionTokens);
 
       if (data.status === "incomplete") {
         throw new Error(`Responses API incomplete: ${data.incomplete_details?.reason || "unknown"}`);
@@ -630,17 +657,22 @@ export class LLMRouter {
           if (typeof fc.name !== "string" || fc.name.length === 0) throw new Error("function_call missing name");
           if (typeof fc.arguments !== "string") throw new Error("function_call arguments must be a string");
         }
+        const validatedFunctionCalls = functionCalls as Array<typeof functionCalls[number] & {
+          call_id: string;
+          name: string;
+          arguments: string;
+        }>;
 
         for (const item of data.output) {
-          input.push(item as Record<string, unknown>);
+          input.push(item as unknown as Record<string, unknown>);
         }
 
         if (onChunk) {
-          const toolNames = functionCalls.map((fc) => bindingByExposedName.get(fc.name)?.tool.name ?? fc.name).join(", ");
+          const toolNames = validatedFunctionCalls.map((fc) => bindingByExposedName.get(fc.name)?.tool.name ?? fc.name).join(", ");
           onChunk(`\n\n> 🔧 调用工具: ${toolNames}\n\n`);
         }
 
-        for (const fc of functionCalls) {
+        for (const fc of validatedFunctionCalls) {
           let result: string;
           const args = readToolArguments(fc.arguments, "function_call");
           try {
@@ -706,11 +738,10 @@ export class LLMRouter {
     if (typeof content !== "string") {
       throw new Error(`LLM 响应格式异常: 缺少 message.content 字段 — ${JSON.stringify(data).slice(0, 200)}`);
     }
-    return {
-      content,
-      promptTokens: data.usage?.prompt_tokens || 0,
-      completionTokens: data.usage?.completion_tokens || 0,
-    };
+    const promptTokens = data.usage?.prompt_tokens || 0;
+    const completionTokens = data.usage?.completion_tokens || 0;
+    this.recordResponseUsage(response, promptTokens, completionTokens);
+    return { content, promptTokens, completionTokens };
   }
 
   private async completeResponses(
@@ -761,11 +792,10 @@ export class LLMRouter {
       throw new Error(`LLM 响应格式异常: 缺少 output 字段 — ${JSON.stringify(data).slice(0, 200)}`);
     }
     const content = readResponsesOutputText(data);
-    return {
-      content,
-      promptTokens: data.usage?.input_tokens || 0,
-      completionTokens: data.usage?.output_tokens || 0,
-    };
+    const promptTokens = data.usage?.input_tokens || 0;
+    const completionTokens = data.usage?.output_tokens || 0;
+    this.recordResponseUsage(response, promptTokens, completionTokens);
+    return { content, promptTokens, completionTokens };
   }
 
   private async completeAnthropic(
@@ -807,11 +837,10 @@ export class LLMRouter {
       throw new Error(`LLM 响应格式异常: 缺少 content 字段 — ${JSON.stringify(data).slice(0, 200)}`);
     }
     const content = readAnthropicTextContent(data);
-    return {
-      content,
-      promptTokens: data.usage?.input_tokens || 0,
-      completionTokens: data.usage?.output_tokens || 0,
-    };
+    const promptTokens = data.usage?.input_tokens || 0;
+    const completionTokens = data.usage?.output_tokens || 0;
+    this.recordResponseUsage(response, promptTokens, completionTokens);
+    return { content, promptTokens, completionTokens };
   }
 
   private async parseOpenAIStream(
@@ -855,6 +884,7 @@ export class LLMRouter {
       for (const line of lines) processLine(line);
     }
     if (buffer) processLine(buffer);
+    this.recordResponseUsage(response, promptTokens, completionTokens);
     return { content: requireLLMContent(fullContent, "message.content"), promptTokens, completionTokens };
   }
 
@@ -916,6 +946,7 @@ export class LLMRouter {
       for (const line of lines) processLine(line);
     }
     if (buffer) processLine(buffer);
+    this.recordResponseUsage(response, promptTokens, completionTokens);
     return { content: requireLLMContent(fullContent, "output_text"), promptTokens, completionTokens };
   }
 
@@ -960,6 +991,7 @@ export class LLMRouter {
       for (const line of lines) processLine(line);
     }
     if (buffer) processLine(buffer);
+    this.recordResponseUsage(response, promptTokens, completionTokens);
     return { content: requireLLMContent(fullContent, "text content"), promptTokens, completionTokens };
   }
 
@@ -1032,7 +1064,7 @@ export class LLMRouter {
 
       if (isStreaming) {
         // Streaming: cannot read body, mark as [streaming]
-        this.onRequestComplete?.({
+        const logId = this.onRequestComplete?.({
           request_url: url,
           request_method: (options.method ?? 'POST').toUpperCase(),
           request_headers: JSON.stringify(maskedHeaders),
@@ -1043,12 +1075,12 @@ export class LLMRouter {
           duration_ms: durationMs,
           error: null,
         });
-        return response;
+        return this.attachLogId(response, logId);
       }
 
       // Non-streaming: read body, log, then reconstruct Response
       const responseText = await response.text();
-      this.onRequestComplete?.({
+      const logId = this.onRequestComplete?.({
         request_url: url,
         request_method: (options.method ?? 'POST').toUpperCase(),
         request_headers: JSON.stringify(maskedHeaders),
@@ -1060,11 +1092,11 @@ export class LLMRouter {
         error: null,
       });
 
-      return new Response(responseText, {
+      return this.attachLogId(new Response(responseText, {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
-      });
+      }), logId);
 
     } catch (err) {
       clearTimeout(timeout);

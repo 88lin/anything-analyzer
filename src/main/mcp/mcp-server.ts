@@ -23,6 +23,7 @@ import type {
 import type { ChatMessage, InteractionType } from "@shared/types";
 import { loadLLMConfig } from "../ipc";
 import { ReplayEngine } from "../capture/replay-engine";
+import { formatMCPServerUrl, normalizeMCPListenHost } from "./mcp-server-listen";
 
 interface MCPServerDeps {
   sessionManager: SessionManager;
@@ -74,9 +75,11 @@ export async function initMCPServer(
   port: number,
   authEnabled: boolean = true,
   authToken: string = '',
+  hostInput: string = '0.0.0.0',
 ): Promise<void> {
   if (httpServer) await stopMCPServer();
 
+  const host = normalizeMCPListenHost(hostInput);
   currentDeps = deps;
 
   httpServer = createServer(
@@ -112,7 +115,7 @@ export async function initMCPServer(
         }
       }
 
-      const url = new URL(req.url || "/", `http://localhost:${port}`);
+      const url = new URL(req.url || "/", formatMCPServerUrl(host, port));
       if (url.pathname !== "/mcp") {
         res.writeHead(404);
         res.end("Not Found");
@@ -196,9 +199,32 @@ export async function initMCPServer(
     },
   );
 
-  httpServer.listen(port, () => {
-    console.log(`[MCP Server] Listening on http://localhost:${port}/mcp`);
-  });
+  const server = httpServer;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error): void => {
+        server.off("listening", onListening);
+        reject(error);
+      };
+      const onListening = (): void => {
+        server.off("error", onError);
+        resolve();
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(port, host);
+    });
+    console.log(`[MCP Server] Listening on ${formatMCPServerUrl(host, port)}`);
+  } catch (error) {
+    httpServer = null;
+    currentDeps = null;
+    try {
+      server.close();
+    } catch {
+      // Server may fail before entering the listening state.
+    }
+    throw error;
+  }
 }
 
 /**

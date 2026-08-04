@@ -17,6 +17,10 @@ import { CaptureEngine } from "./capture/capture-engine";
 import { SessionManager } from "./session/session-manager";
 import { AiAnalyzer } from "./ai/ai-analyzer";
 import { WindowManager } from "./window";
+import {
+  ensureTokenCalibrationLoaded,
+  flushTokenCalibration,
+} from "./ai/token-calibration-store";
 import { registerIpcHandlers, loadProxyConfig, applyProxy, loadMCPServerConfig } from "./ipc";
 import { Updater } from "./updater";
 import { MCPClientManager } from "./mcp/mcp-manager";
@@ -44,6 +48,7 @@ let caManager: CaManager;
 let mitmProxy: MitmProxyServer;
 
 app.whenReady().then(async () => {
+  ensureTokenCalibrationLoaded();
   // Initialize structured logging (replaces console.log/warn/error globally)
   initLogger();
 
@@ -161,6 +166,7 @@ app.whenReady().then(async () => {
       mcpServerConfig.port,
       mcpServerConfig.authEnabled,
       mcpServerConfig.authToken,
+      mcpServerConfig.host,
     ).catch((err) => console.error("Failed to start MCP Server:", err));
   }
 
@@ -226,6 +232,7 @@ app.on("before-quit", (event) => {
   // Block immediate quit and perform ordered async cleanup first.
   event.preventDefault();
   quitInProgress = true;
+  flushTokenCalibration();
 
   (async () => {
     try {

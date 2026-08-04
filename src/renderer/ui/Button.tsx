@@ -39,7 +39,7 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button className={cls} disabled={disabled || loading} {...rest}>
-      {icon && <span style={{ display: 'flex', alignItems: 'center' }}>{icon}</span>}
+      {icon && <span className={styles.icon}>{icon}</span>}
       {!iconOnly && children}
     </button>
   )

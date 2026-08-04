@@ -97,7 +97,7 @@ export interface AiRequestLog {
   id: number;
   session_id: string | null;
   report_id: string | null;
-  type: 'analyze' | 'chat' | 'filter';
+  type: AiRequestLogType;
   provider: string;
   model: string;
   request_url: string;
@@ -114,6 +114,8 @@ export interface AiRequestLog {
   created_at: number;
 }
 
+export type AiRequestLogType = 'analyze' | 'chat' | 'filter' | 'compress' | 'subagent';
+
 /** Data passed from LLMRouter intercept (without context fields filled by caller) */
 export interface AiRequestLogData {
   request_url: string;
@@ -127,15 +129,47 @@ export interface AiRequestLogData {
   error: string | null;
 }
 
-// ---- Request Summary (Phase 1 预过滤) ----
+export interface ContextBudgetConfig {
+  /** 模型最大上下文，单位 token；默认 200000 */
+  maxContextTokens: number;
+  /** 触发压缩的占用峰值；默认 0.85 */
+  compressionPeak: number;
+  /** 压缩后目标占用；默认 0.55 */
+  compressionTarget: number;
+  /** 预留给 completion 的 token；默认 8192 */
+  reserveCompletionTokens: number;
+  /** 上下文组装模式；默认 index_first */
+  contextMode: ContextMode;
+  /** 压缩方式；默认 rules */
+  compressionMode: CompressionMode;
+  /** 超大请求集是否启用并行子分析；默认 true */
+  subagentEnabled: boolean;
+  /** 达到该请求数后启用子分析；默认 400 */
+  subagentThreshold: number;
+  /** 每个子任务处理的请求摘要数；默认 120 */
+  subagentChunkSize: number;
+  /** 最大并行子任务数；默认 3 */
+  maxSubagents: number;
+}
 
-/** Phase 1 轻量请求摘要，用于 AI 相关性过滤 */
+export type CompressionMode = "rules" | "hybrid";
+export type ContextMode = "index_first" | "legacy_inline";
+
+// ---- Request Summary (Phase 1 预过滤 / index-first) ----
+
+/** 轻量请求摘要：用于 AI 相关性过滤与 index-first 首轮上下文 */
 export interface RequestSummary {
   seq: number;
   method: string;
   url: string;
   status: number | null;
   contentType: string | null;
+  timestamp?: number;
+  bodyBytes?: number;
+  responseBytes?: number;
+  hasAuthHeader?: boolean;
+  isStreaming?: boolean;
+  hookCount?: number;
 }
 
 // ---- Scene Hint ----
@@ -168,7 +202,9 @@ export interface ChatMessage {
  * LLM 对话历史中保留该块以维持工具交互上下文。
  */
 export function stripToolContext(content: string): string {
-  return content.replace(/\n*<tool_context>[\s\S]*?<\/tool_context>\s*$/g, '');
+  return content
+    .replace(/\n*<tool_context>[\s\S]*?<\/tool_context>\s*$/g, '')
+    .replace(/\n*<tool_state>[\s\S]*?<\/tool_state>\s*$/g, '');
 }
 
 // ---- Browser Tab ----
@@ -223,6 +259,8 @@ export interface LLMProviderConfig {
   apiKey: string;
   model: string;
   maxTokens: number;
+  /** 可选：分析/追问上下文预算与压缩策略 */
+  contextBudget?: Partial<ContextBudgetConfig>;
 }
 
 // ---- Prompt Template ----
@@ -272,6 +310,7 @@ export interface ProxyConfig {
 
 export interface MCPServerSettings {
   enabled: boolean;
+  host: string;
   port: number;
   authEnabled: boolean;
   authToken: string;
@@ -400,6 +439,8 @@ export interface FilteredRequest {
   responseHeaders: Record<string, string> | null;
   responseBody: string | null;
   hooks: JsHookRecord[];
+  /** 请求时间戳（ms），用于 index-first 列表展示 */
+  timestamp?: number;
 }
 
 // ---- Crypto Script Snippet ----
@@ -656,7 +697,7 @@ export interface ElectronAPI {
   // MCP Server
   getMCPServerConfig: () => Promise<MCPServerSettings>;
   saveMCPServerConfig: (config: MCPServerSettings) => Promise<void>;
-  getMCPServerStatus: () => Promise<{ running: boolean; port: number | null }>;
+  getMCPServerStatus: () => Promise<{ running: boolean; host: string; port: number | null }>;
 
   // MITM Proxy
   getMitmProxyConfig: () => Promise<MitmProxyConfig>;

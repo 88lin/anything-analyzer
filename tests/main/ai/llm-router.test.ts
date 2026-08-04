@@ -73,6 +73,53 @@ describe("LLMRouter", () => {
   });
 
   describe("routing", () => {
+    it("writes usage back to the exact HTTP log row", async () => {
+      fetchSpy.mockResolvedValueOnce(
+        createJSONResponse({
+          choices: [{ message: { content: "done" } }],
+          usage: { prompt_tokens: 12, completion_tokens: 3 },
+        }),
+      );
+      const updateUsage = vi.fn();
+      const router = new LLMRouter(baseConfig, () => 41, updateUsage);
+
+      await router.complete([{ role: "user", content: "test" }]);
+
+      expect(updateUsage).toHaveBeenCalledOnce();
+      expect(updateUsage).toHaveBeenCalledWith(41, 12, 3);
+    });
+
+    it("keeps tool-round usage on each corresponding HTTP log row", async () => {
+      const config: LLMProviderConfig = { ...baseConfig, apiType: "responses" };
+      fetchSpy
+        .mockResolvedValueOnce(
+          createJSONResponse({
+            output: [{ type: "function_call", call_id: "call-1", name: "lookup", arguments: "{}" }],
+            usage: { input_tokens: 10, output_tokens: 1 },
+          }),
+        )
+        .mockResolvedValueOnce(
+          createJSONResponse({
+            output: [{ type: "message", content: [{ type: "output_text", text: "done" }] }],
+            usage: { input_tokens: 20, output_tokens: 4 },
+          }),
+        );
+      const logIds = [101, 102];
+      const updateUsage = vi.fn();
+      const router = new LLMRouter(config, () => logIds.shift(), updateUsage);
+
+      await router.completeWithTools(
+        [{ role: "user", content: "test" }],
+        [{ name: "lookup", description: "Lookup", inputSchema: { type: "object" } }],
+        async () => "tool result",
+      );
+
+      expect(updateUsage.mock.calls).toEqual([
+        [101, 10, 1],
+        [102, 20, 4],
+      ]);
+    });
+
     it("should abort while waiting to retry rate-limited requests", async () => {
       vi.useFakeTimers();
       const controller = new AbortController();

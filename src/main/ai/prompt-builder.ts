@@ -3,6 +3,7 @@ import type {
   CryptoScriptSnippet,
   SceneHint,
   AuthChainItem,
+  ContextMode,
   FilteredRequest,
   PromptTemplate,
   RequestSummary,
@@ -46,6 +47,11 @@ const DEFAULT_REQUIREMENTS = `1. 场景识别：判断用户执行了什么操�
 7. 关键依赖关系：请求之间的依赖和时序关系
 8. 复现建议：用代码伪逻辑描述如何复现整个流程`;
 
+/** 首轮内联索引上限；超出后头尾抽样 + list_requests 分页 */
+const INDEX_INLINE_LIMIT = 120;
+const INDEX_HEAD_COUNT = 80;
+const INDEX_TAIL_COUNT = 20;
+
 /**
  * PromptBuilder — Builds the analysis prompt from assembled data.
  */
@@ -56,20 +62,22 @@ export class PromptBuilder {
     purpose?: string,
     template?: PromptTemplate,
     allSummaries?: RequestSummary[],
+    contextMode: ContextMode = "index_first",
   ): PromptMessages {
-    const hasToolAccess = allSummaries && allSummaries.length > data.requests.length;
+    const indexFirst = contextMode !== "legacy_inline";
+    const summaries = allSummaries
+      ?? data.requests.map((r) => this.toSummary(r, data.streamingRequests.some((s) => s.seq === r.seq)));
+    const hasExtraIndex = Boolean(allSummaries && allSummaries.length > data.requests.length);
 
-    const toolHint = hasToolAccess
-      ? '\n你可以使用 get_request_detail 工具来查看任意请求的完整内容（包括被过滤的请求）。当你发现分析信息不足时，主动调用此工具获取更多细节。'
-      : '';
+    const toolHint = indexFirst || hasExtraIndex
+      ? "\n你可以使用 list_requests / search_requests / get_request_detail 工具按需缩小范围并查看请求详情。首轮上下文仅提供请求索引，不要假设正文已内联；信息不足时主动调用工具。"
+      : "";
 
     const system = (template?.systemPrompt
       || `你是一位网站协议分析专家。你的任务是分析用户在网站上的操作过程中产生的HTTP请求、JS调用和存储变化，识别其业务场景，并生成结构化的协议分析报告。Be precise and technical. Output in Chinese (Simplified).`) + toolHint;
 
     const analysisRequirements = template?.requirements
       || this.buildAnalysisRequirements(purpose);
-    const requestsSection = this.formatRequests(data.requests);
-    const hooksSection = this.formatHooks(data.requests);
     const storageSection = this.formatStorageDiff(data.storageDiff);
     const sceneSection = this.formatSceneHints(data.sceneHints);
     const authSection = this.formatAuthChain(data.authChain);
@@ -79,10 +87,45 @@ export class PromptBuilder {
     const cryptoHooksSection = this.formatCryptoHooks(data.requests);
     const cryptoScriptsSection = this.formatCryptoScripts(data.cryptoScripts);
 
-    // 完整请求索引（仅当 Phase 1 过滤生效时添加）
-    const requestIndexSection = hasToolAccess
-      ? this.formatRequestIndex(allSummaries!, data.requests.length)
-      : '';
+    if (indexFirst) {
+      const requestIndexSection = this.formatRequestIndex(summaries, 0, true);
+      const user = `以下是用户在 ${platformName} 上操作时的数据索引（默认不内联 request/response 正文）。
+
+## 场景线索
+${sceneSection}
+
+## 鉴权链
+${authSection}
+
+## 流式通信
+${streamingSection}
+
+${requestIndexSection}
+## 加密操作记录
+${cryptoHooksSection}
+
+## 相关加密代码片段
+${cryptoScriptsSection}
+
+## 存储变化
+${storageSection}
+
+## 分析要求
+${analysisRequirements}
+
+## 工具使用约定
+1. 先根据请求索引定位关键请求（登录/鉴权/业务 API/流式端点）
+2. 索引很长时先用 list_requests 过滤，或用 search_requests 按关键字搜索
+3. 使用 get_request_detail 按需拉取 1~5 条详情，再继续分析
+4. 不要编造未通过工具确认的请求体或响应体字段`;
+      return { system, user };
+    }
+
+    const requestsSection = this.formatRequests(data.requests);
+    const hooksSection = this.formatHooks(data.requests);
+    const requestIndexSection = hasExtraIndex
+      ? this.formatRequestIndex(allSummaries!, data.requests.length, false)
+      : "";
 
     const user = `以下是用户在 ${platformName} 上操作时的完整数据。
 
@@ -294,17 +337,97 @@ ${DEFAULT_REQUIREMENTS}`;
     }).join('\n\n');
   }
 
-  private formatRequestIndex(summaries: RequestSummary[], analysisCount: number): string {
-    const lines = summaries.map(s => {
-      const ct = s.contentType ? ` [${s.contentType.split(';')[0].trim()}]` : '';
-      return `#${s.seq} ${s.method} ${s.url} -> ${s.status ?? 'pending'}${ct}`;
-    });
+  private toSummary(r: FilteredRequest, isStreaming = false): RequestSummary {
+    const authHeader = r.headers["authorization"] || r.headers["Authorization"] || "";
+    return {
+      seq: r.seq,
+      method: r.method,
+      url: r.url,
+      status: r.status,
+      contentType: r.responseHeaders?.["content-type"]
+        ?? r.responseHeaders?.["Content-Type"]
+        ?? r.headers["content-type"]
+        ?? r.headers["Content-Type"]
+        ?? null,
+      timestamp: r.timestamp,
+      bodyBytes: r.body ? r.body.length : 0,
+      responseBytes: r.responseBody ? r.responseBody.length : 0,
+      hasAuthHeader: Boolean(authHeader),
+      isStreaming,
+      hookCount: r.hooks.length,
+    };
+  }
+
+  private formatTimestamp(ts?: number): string {
+    if (!ts) return "-";
+    try {
+      return new Date(ts).toISOString();
+    } catch {
+      return String(ts);
+    }
+  }
+
+  private formatBytes(n?: number): string {
+    const value = typeof n === "number" ? n : 0;
+    if (value < 1024) return `${value}B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)}KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)}MB`;
+  }
+
+  private formatIndexLine(s: RequestSummary): string {
+    const ct = s.contentType ? ` [${s.contentType.split(";")[0].trim()}]` : "";
+    const flags: string[] = [];
+    if (s.hasAuthHeader) flags.push("auth");
+    if (s.isStreaming) flags.push("stream");
+    if (s.hookCount && s.hookCount > 0) flags.push(`hooks=${s.hookCount}`);
+    const flagText = flags.length ? ` {${flags.join(",")}}` : "";
+    return `#${s.seq} ${s.method} ${s.url} @ ${this.formatTimestamp(s.timestamp)} -> ${s.status ?? "pending"}${ct} body=${this.formatBytes(s.bodyBytes)} resp=${this.formatBytes(s.responseBytes)}${flagText}`;
+  }
+
+  private paginateSummaries(summaries: RequestSummary[]): {
+    lines: string[];
+    truncated: boolean;
+    shown: number;
+  } {
+    if (summaries.length <= INDEX_INLINE_LIMIT) {
+      return {
+        lines: summaries.map((s) => this.formatIndexLine(s)),
+        truncated: false,
+        shown: summaries.length,
+      };
+    }
+    const head = summaries.slice(0, INDEX_HEAD_COUNT);
+    const tail = summaries.slice(-INDEX_TAIL_COUNT);
+    const omitted = summaries.length - head.length - tail.length;
+    const lines = [
+      ...head.map((s) => this.formatIndexLine(s)),
+      `... 省略中间 ${omitted} 条（共 ${summaries.length} 条）。请用 list_requests({ offset, limit, page }) 或 search_requests 翻页/检索 ...`,
+      ...tail.map((s) => this.formatIndexLine(s)),
+    ];
+    return { lines, truncated: true, shown: head.length + tail.length };
+  }
+
+  private formatRequestIndex(summaries: RequestSummary[], analysisCount: number, indexFirst: boolean): string {
+    const { lines, truncated, shown } = this.paginateSummaries(summaries);
+
+    if (indexFirst) {
+      const pageHint = truncated
+        ? `\n首轮仅展示头 ${INDEX_HEAD_COUNT} + 尾 ${INDEX_TAIL_COUNT} 条（共展示 ${shown}/${summaries.length}）。超大会话请优先 list_requests / search_requests。`
+        : "";
+      return `## 请求索引（共 ${summaries.length} 条，正文未内联）
+格式: #seq METHOD URL @ time -> status [content-type] body=.. resp=..
+可使用 list_requests / search_requests 缩小范围，再用 get_request_detail 查看详情。${pageHint}
+
+${lines.join("\n")}
+`;
+    }
+
     return `
 ## 完整请求索引（包含被过滤的请求）
-以下是本次会话中所有 ${summaries.length} 条请求的摘要（当前深度分析仅包含其中 ${analysisCount} 条）。
-如果你认为被过滤的请求可能与分析相关，可以调用 get_request_detail 工具获取其完整内容。
+以下是本次会话中所有 ${summaries.length} 条请求的摘要（当前深度分析仅包含其中 ${analysisCount} 条${truncated ? `，索引已分页展示 ${shown} 条` : ""}）。
+如果你认为被过滤的请求可能与分析相关，可以调用 get_request_detail / list_requests 工具获取。
 
-${lines.join('\n')}
+${lines.join("\n")}
 
 `;
   }

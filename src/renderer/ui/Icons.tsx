@@ -279,7 +279,7 @@ export const IconWifi: React.FC<IconProps> = (props) => (
 )
 
 export const IconLoading: React.FC<IconProps> = (props) => {
-  const { size = '1em', ...rest } = props
+  const { size = '1em', style, ...rest } = props
   return (
     <svg
       width={size}
@@ -289,17 +289,21 @@ export const IconLoading: React.FC<IconProps> = (props) => {
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
+      overflow="hidden"
+      style={{ display: 'block', overflow: 'hidden', ...style }}
       {...rest}
     >
-      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-      <animateTransform
-        attributeName="transform"
-        type="rotate"
-        from="0 12 12"
-        to="360 12 12"
-        dur="0.6s"
-        repeatCount="indefinite"
-      />
+      <g>
+        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+        <animateTransform
+          attributeName="transform"
+          type="rotate"
+          from="0 12 12"
+          to="360 12 12"
+          dur="0.6s"
+          repeatCount="indefinite"
+        />
+      </g>
     </svg>
   )
 }

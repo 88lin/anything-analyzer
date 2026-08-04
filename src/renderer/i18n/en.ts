@@ -54,6 +54,7 @@ export const en = {
   'data.clear': 'Clear',
   'data.selected': 'Selected',
   'data.total': 'Total',
+  'data.interactions': 'Interactions',
 
   // Browser view
   'browser.start': 'Start',
@@ -84,6 +85,11 @@ export const en = {
   'report.explainCrypto': 'Explain encryption/signing flow',
   'report.securityRisks': 'Analyze potential security risks',
   'report.listApiParams': 'List all API params and response structures',
+
+  // Context usage
+  'contextBar.title': 'Context usage',
+  'contextBar.available': 'Available',
+  'contextBar.peak': 'Peak',
 
   // Settings
   'settings.title': 'Settings',
@@ -122,8 +128,8 @@ export const en = {
   'fingerprint.regenerated': 'New fingerprint generated',
   'fingerprint.detail': 'Details',
   'fingerprint.testLinks': 'Test Links',
+
   // Interaction Recording
-  'data.interactions': 'Interactions',
   'interaction.noData': 'No interaction data yet. Start capture and operate the page to record.',
   'interaction.click': 'Click',
   'interaction.dblclick': 'DblClick',
@@ -141,6 +147,7 @@ export const en = {
   'interaction.clearConfirm': 'Clear all interaction recordings for this session?',
   'interaction.recording': 'Recording',
   'interaction.points': '{count} points',
+
   // AI Request Log
   'aiLog.title': 'AI Request Log',
   'aiLog.backToReport': '← Back to Report',
@@ -151,6 +158,8 @@ export const en = {
   'aiLog.filterAnalyze': 'analyze',
   'aiLog.filterChat': 'chat',
   'aiLog.filterFilter': 'filter',
+  'aiLog.filterCompress': 'compress',
+  'aiLog.filterSubagent': 'subagent',
   'aiLog.noData': 'No AI request logs yet. Run an analysis to start recording.',
   'aiLog.tabRequest': 'Request Body',
   'aiLog.tabResponse': 'Response Body',

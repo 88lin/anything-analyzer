@@ -1,6 +1,12 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import styles from './VirtualTable.module.css'
+import {
+  buildRowLookup,
+  filterRows,
+  getVirtualRange,
+  resolveRowKey,
+} from './VirtualTable.utils'
 
 /* ---- Types ---- */
 export interface VTColumn<T> {
@@ -38,15 +44,13 @@ export interface VirtualTableProps<T> {
   onFilterDropdownOpenChange?: (open: boolean) => void
 }
 
-/* ---- Helpers ---- */
-function getRowKey<T>(record: T, rowKey: string | ((r: T) => string | number)): string | number {
-  return typeof rowKey === 'function' ? rowKey(record) : (record as Record<string, unknown>)[rowKey] as string | number
-}
-
 function getValue<T>(record: T, dataIndex?: string): unknown {
   if (!dataIndex) return record
   return (record as Record<string, unknown>)[dataIndex]
 }
+
+const EMPTY_FILTERS = new Set<string>()
+const EMPTY_SELECTED_KEYS: (string | number)[] = []
 
 /* ---- Filter Dropdown (Portal-based to avoid overflow clipping) ---- */
 function FilterDropdown({ column, activeFilters, onChange, onClose, filterSearch, anchorRef }: {
@@ -138,6 +142,9 @@ export function VirtualTable<T>({
   const [expandedKeys, setExpandedKeys] = useState<Set<string | number>>(new Set())
   const bodyRef = useRef<HTMLDivElement>(null)
   const [autoHeight, setAutoHeight] = useState(heightProp ?? 400)
+  const [scrollTop, setScrollTop] = useState(0)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const scrollFrameRef = useRef<number | null>(null)
 
   // Auto-detect container height via ResizeObserver when no explicit height given
   useEffect(() => {
@@ -163,22 +170,21 @@ export function VirtualTable<T>({
     if (wasOpen !== isOpen) onFilterDropdownOpenChange?.(isOpen)
   }, [openFilter, onFilterDropdownOpenChange])
 
-  // Apply filters
-  const filteredData = useMemo(() => {
-    let result = data
+  const activeFilterRules = useMemo(() => {
+    const rules = []
     for (const col of columns) {
       const active = filterState[col.key]
       if (active && active.size > 0 && col.onFilter) {
-        result = result.filter(r => {
-          for (const val of active) {
-            if (col.onFilter!(val, r)) return true
-          }
-          return false
-        })
+        rules.push({ values: active, matches: col.onFilter })
       }
     }
-    return result
-  }, [data, columns, filterState])
+    return rules
+  }, [columns, filterState])
+
+  const filteredData = useMemo(
+    () => filterRows(data, activeFilterRules),
+    [data, activeFilterRules],
+  )
 
   // Apply sort
   const sortedData = useMemo(() => {
@@ -189,13 +195,13 @@ export function VirtualTable<T>({
     return sortState.dir === 'desc' ? sorted.reverse() : sorted
   }, [filteredData, sortState, columns])
 
-  const toggleSort = (key: string) => {
+  const toggleSort = useCallback((key: string) => {
     setSortState(prev => {
       if (prev?.key !== key) return { key, dir: 'asc' }
       if (prev.dir === 'asc') return { key, dir: 'desc' }
       return null
     })
-  }
+  }, [])
 
   const toggleExpand = useCallback((key: string | number) => {
     setExpandedKeys(prev => {
@@ -206,47 +212,113 @@ export function VirtualTable<T>({
     })
   }, [])
 
-  const allKeys = useMemo(() => sortedData.map(r => getRowKey(r, rowKey)), [sortedData, rowKey])
-  const allSelected = rowSelection && allKeys.length > 0 && allKeys.every(k => rowSelection.selectedKeys.includes(k))
+  const rowLookup = useMemo(() => buildRowLookup(sortedData, rowKey), [sortedData, rowKey])
+  const selectedKeys = rowSelection?.selectedKeys ?? EMPTY_SELECTED_KEYS
+  const selectedKeySet = useMemo(() => new Set(selectedKeys), [selectedKeys])
+  const allSelected = useMemo(
+    () => Boolean(
+      rowSelection
+      && rowLookup.keys.length > 0
+      && rowLookup.keys.every(key => selectedKeySet.has(key)),
+    ),
+    [rowLookup.keys, rowSelection, selectedKeySet],
+  )
 
-  const toggleSelectAll = () => {
+  const toggleSelectAll = useCallback(() => {
     if (!rowSelection) return
     if (allSelected) rowSelection.onChange([], [])
-    else rowSelection.onChange(allKeys, sortedData)
-  }
+    else rowSelection.onChange(rowLookup.keys, sortedData)
+  }, [allSelected, rowLookup.keys, rowSelection, sortedData])
 
   // Track last clicked row index for shift+click range selection
   const lastClickedIndexRef = useRef<number | null>(null)
 
-  const toggleSelectRow = (record: T, event?: React.MouseEvent) => {
+  useEffect(() => {
+    lastClickedIndexRef.current = null
+  }, [sortedData])
+
+  const toggleSelectRow = useCallback((record: T, event?: React.MouseEvent) => {
     if (!rowSelection) return
-    const key = getRowKey(record, rowKey)
-    const currentIndex = sortedData.findIndex(r => getRowKey(r, rowKey) === key)
+    const key = resolveRowKey(record, rowKey)
+    const currentIndex = rowLookup.indexByKey.get(key) ?? -1
 
     // Shift+click: range selection
     if (event?.shiftKey && lastClickedIndexRef.current !== null && currentIndex >= 0) {
       const start = Math.min(lastClickedIndexRef.current, currentIndex)
       const end = Math.max(lastClickedIndexRef.current, currentIndex)
-      const rangeKeys = sortedData.slice(start, end + 1).map(r => getRowKey(r, rowKey))
-      // Merge with existing selection
-      const mergedKeys = new Set([...rowSelection.selectedKeys, ...rangeKeys])
+      const mergedKeys = new Set(selectedKeys)
+      for (let index = start; index <= end; index += 1) {
+        mergedKeys.add(rowLookup.keys[index])
+      }
       const nextKeys = Array.from(mergedKeys)
-      const nextRows = sortedData.filter(r => nextKeys.includes(getRowKey(r, rowKey)))
+      const nextRows = nextKeys.flatMap(selectedKey => {
+        const selectedRow = rowLookup.rowByKey.get(selectedKey)
+        return selectedRow === undefined ? [] : [selectedRow]
+      })
       rowSelection.onChange(nextKeys, nextRows)
       lastClickedIndexRef.current = currentIndex
       return
     }
 
     lastClickedIndexRef.current = currentIndex
-    const idx = rowSelection.selectedKeys.indexOf(key)
-    let nextKeys: (string | number)[]
-    if (idx >= 0) nextKeys = rowSelection.selectedKeys.filter(k => k !== key)
-    else nextKeys = [...rowSelection.selectedKeys, key]
-    const nextRows = sortedData.filter(r => nextKeys.includes(getRowKey(r, rowKey)))
+    const nextKeys = selectedKeySet.has(key)
+      ? selectedKeys.filter(selectedKey => selectedKey !== key)
+      : [...selectedKeys, key]
+    const nextRows = nextKeys.flatMap(selectedKey => {
+      const selectedRow = rowLookup.rowByKey.get(selectedKey)
+      return selectedRow === undefined ? [] : [selectedRow]
+    })
     rowSelection.onChange(nextKeys, nextRows)
-  }
+  }, [rowKey, rowLookup, rowSelection, selectedKeySet, selectedKeys])
 
   const hasExpand = !!expandable
+
+  const totalHeight = sortedData.length * rowHeight
+  const virtualRange = useMemo(() => getVirtualRange({
+    itemCount: sortedData.length,
+    rowHeight,
+    viewportHeight: height,
+    scrollTop,
+  }), [height, rowHeight, scrollTop, sortedData.length])
+
+  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const nextScrollTop = event.currentTarget.scrollTop
+    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current)
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null
+      setScrollTop(previousScrollTop => {
+        const previousRange = getVirtualRange({
+          itemCount: sortedData.length,
+          rowHeight,
+          viewportHeight: height,
+          scrollTop: previousScrollTop,
+        })
+        const nextRange = getVirtualRange({
+          itemCount: sortedData.length,
+          rowHeight,
+          viewportHeight: height,
+          scrollTop: nextScrollTop,
+        })
+        return previousRange.startIndex === nextRange.startIndex
+          ? previousScrollTop
+          : nextScrollTop
+      })
+    })
+  }, [height, rowHeight, sortedData.length])
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (hasExpand) return
+    const maxScrollTop = Math.max(0, totalHeight - height)
+    const scrollContainer = scrollContainerRef.current
+    if (scrollContainer && scrollContainer.scrollTop > maxScrollTop) {
+      scrollContainer.scrollTop = maxScrollTop
+      setScrollTop(maxScrollTop)
+    }
+  }, [hasExpand, height, totalHeight])
 
   // Refs for filter button anchors
   const filterBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({})
@@ -289,7 +361,7 @@ export function VirtualTable<T>({
                 {openFilter === col.key && (
                   <FilterDropdown
                     column={col as { filters: Array<{ text: string; value: string }> }}
-                    activeFilters={activeFilter || new Set()}
+                    activeFilters={activeFilter || EMPTY_FILTERS}
                     filterSearch={col.filterSearch}
                     onChange={(filters) => setFilterState(prev => ({ ...prev, [col.key]: filters }))}
                     onClose={() => handleFilterOpen(null)}
@@ -306,9 +378,9 @@ export function VirtualTable<T>({
 
   // Render a single row (used by both expandable and virtual modes)
   const renderRow = (record: T, index: number, rowStyle?: React.CSSProperties) => {
-    const key = getRowKey(record, rowKey)
+    const key = resolveRowKey(record, rowKey)
     const rowProps = onRow?.(record)
-    const isSelected = rowSelection?.selectedKeys.includes(key)
+    const isSelected = selectedKeySet.has(key)
     const isExpanded = hasExpand && expandedKeys.has(key)
     const canExpand = hasExpand && (expandable?.rowExpandable ? expandable.rowExpandable(record) : true)
 
@@ -371,19 +443,6 @@ export function VirtualTable<T>({
     )
   }
 
-  // Virtual scroll mode (no expandable rows) — native implementation
-  const [scrollTop, setScrollTop] = useState(0)
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  const totalHeight = sortedData.length * rowHeight
-  const visibleCount = Math.ceil(height / rowHeight) + 2 // overscan by 2
-  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - 1)
-  const endIndex = Math.min(sortedData.length, startIndex + visibleCount)
-
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    setScrollTop(e.currentTarget.scrollTop)
-  }, [])
-
   return (
     <div className={styles.wrapper}>
       {showHeader && renderHeader()}
@@ -394,11 +453,12 @@ export function VirtualTable<T>({
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
+            className={styles.virtualViewport}
             style={{ height, width: '100%', overflow: 'auto' }}
           >
-            <div style={{ height: totalHeight, position: 'relative' }}>
-              {sortedData.slice(startIndex, endIndex).map((record, i) => {
-                const actualIndex = startIndex + i
+            <div className={styles.virtualCanvas} style={{ height: totalHeight }}>
+              {sortedData.slice(virtualRange.startIndex, virtualRange.endIndex).map((record, i) => {
+                const actualIndex = virtualRange.startIndex + i
                 return renderRow(record, actualIndex, {
                   position: 'absolute',
                   top: actualIndex * rowHeight,

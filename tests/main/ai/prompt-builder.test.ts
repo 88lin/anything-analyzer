@@ -176,3 +176,63 @@ describe("PromptBuilder", () => {
     expect(result.user).toContain('(无相关加密代码)')
   })
 });
+
+
+describe("contextMode=index_first", () => {
+  const builder = new PromptBuilder();
+  const data = createMinimalData();
+
+  it("does not inline request/response bodies by default", () => {
+    const { system, user } = builder.build(data, "example.com", undefined, undefined, undefined, "index_first");
+    expect(system).toContain("get_request_detail");
+    expect(user).toContain("请求索引");
+    expect(user).toContain("#1 GET https://example.com/api/test");
+    expect(user).not.toContain('{"ok":true}');
+    expect(user).not.toContain("## 请求日志");
+    expect(user).toContain("工具使用约定");
+  });
+
+  it("legacy_inline still embeds response body", () => {
+    const { user } = builder.build(data, "example.com", undefined, undefined, undefined, "legacy_inline");
+    expect(user).toContain("## 请求日志");
+    expect(user).toContain('{"ok":true}');
+  });
+});
+
+
+describe("index pagination", () => {
+  it("paginates large request index in index_first mode", () => {
+    const builder = new PromptBuilder();
+    const base = createMinimalData();
+    const requests = Array.from({ length: 150 }, (_, i) => ({
+      seq: i + 1,
+      method: "GET",
+      url: `https://example.com/api/${i + 1}`,
+      headers: {},
+      body: null,
+      status: 200,
+      responseHeaders: null,
+      responseBody: null,
+      hooks: [],
+      timestamp: 1_700_000_000_000 + i,
+    }));
+    const data = { ...base, requests };
+    const summaries = requests.map((r) => ({
+      seq: r.seq,
+      method: r.method,
+      url: r.url,
+      status: r.status,
+      contentType: "application/json",
+      timestamp: r.timestamp,
+      bodyBytes: 0,
+      responseBytes: 0,
+    }));
+    const { user } = builder.build(data, "example.com", undefined, undefined, summaries, "index_first");
+    expect(user).toContain("省略中间");
+    expect(user).toContain("list_requests");
+    expect(user).toContain("#1 GET");
+    expect(user).toContain("#150 GET");
+    // middle sample should be omitted
+    expect(user).not.toContain("#90 GET https://example.com/api/90");
+  });
+});

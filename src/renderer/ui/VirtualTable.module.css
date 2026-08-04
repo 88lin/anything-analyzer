@@ -153,12 +153,22 @@
   min-height: 0;
 }
 
+.virtualViewport {
+  contain: strict;
+}
+
+.virtualCanvas {
+  position: relative;
+  width: 100%;
+}
+
 /* Row */
 .row {
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--color-border-subtle);
   transition: background var(--transition-fast);
+  contain: layout paint style;
 }
 
 .row:hover {

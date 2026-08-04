@@ -436,6 +436,7 @@ export class AiRequestLogRepo {
     findById: Database.Statement;
     deleteBySession: Database.Statement;
     updateTokens: Database.Statement;
+    updateTokensById: Database.Statement;
   };
 
   constructor(private db: Database.Database) {
@@ -470,11 +471,14 @@ export class AiRequestLogRepo {
         `UPDATE ai_request_logs SET prompt_tokens = ?, completion_tokens = ?
          WHERE id = (SELECT MAX(id) FROM ai_request_logs WHERE session_id = ? AND type = ?)`
       ),
+      updateTokensById: db.prepare(
+        'UPDATE ai_request_logs SET prompt_tokens = ?, completion_tokens = ? WHERE id = ?'
+      ),
     };
   }
 
-  insert(log: Omit<AiRequestLog, 'id'>): void {
-    this.stmts.insert.run(log);
+  insert(log: Omit<AiRequestLog, 'id'>): number {
+    return Number(this.stmts.insert.run(log).lastInsertRowid);
   }
 
   findBySession(sessionId: string): AiRequestLog[] {
@@ -495,6 +499,10 @@ export class AiRequestLogRepo {
 
   updateLatestTokens(sessionId: string, type: string, promptTokens: number, completionTokens: number): void {
     this.stmts.updateTokens.run(promptTokens, completionTokens, sessionId, type);
+  }
+
+  updateTokensById(id: number, promptTokens: number, completionTokens: number): void {
+    this.stmts.updateTokensById.run(promptTokens, completionTokens, id);
   }
 }
 

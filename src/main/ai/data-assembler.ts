@@ -29,7 +29,8 @@ export class DataAssembler {
         headers: this.safeParseJson(r.request_headers) || {},
         body: r.request_body, status: r.status_code,
         responseHeaders: r.response_headers ? this.safeParseJson(r.response_headers) : null,
-        responseBody: r.response_body, hooks: relatedHooks
+        responseBody: r.response_body, hooks: relatedHooks,
+        timestamp: r.timestamp,
       }
     })
 
@@ -180,13 +181,27 @@ export class DataAssembler {
    * 从已组装数据中提取轻量请求摘要（用于 Phase 1 预过滤）
    */
   extractSummaries(data: AssembledData): RequestSummary[] {
-    return data.requests.map(r => ({
-      seq: r.seq,
-      method: r.method,
-      url: r.url,
-      status: r.status,
-      contentType: r.responseHeaders?.['content-type'] ?? null,
-    }))
+    const streamingSeqs = new Set(data.streamingRequests.map(r => r.seq))
+    return data.requests.map(r => {
+      const authHeader = r.headers['authorization'] || r.headers['Authorization'] || ''
+      return {
+        seq: r.seq,
+        method: r.method,
+        url: r.url,
+        status: r.status,
+        contentType: r.responseHeaders?.['content-type']
+          ?? r.responseHeaders?.['Content-Type']
+          ?? r.headers['content-type']
+          ?? r.headers['Content-Type']
+          ?? null,
+        timestamp: r.timestamp,
+        bodyBytes: r.body ? r.body.length : 0,
+        responseBytes: r.responseBody ? r.responseBody.length : 0,
+        hasAuthHeader: Boolean(authHeader),
+        isStreaming: streamingSeqs.has(r.seq),
+        hookCount: r.hooks.length,
+      }
+    })
   }
 
   /**

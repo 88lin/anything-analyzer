@@ -8,6 +8,12 @@ import rehypeHighlight from 'rehype-highlight'
 import type { AnalysisReport, ChatMessage, CapturedRequest, JsHookRecord } from '@shared/types'
 import { stripToolContext } from '@shared/types'
 import { AiLogView } from './AiLogView'
+import ContextUsageBar from './ContextUsageBar'
+import {
+  buildContextUsageSnapshot,
+  estimateMessagesTokensByContent,
+  type ContextUsageSnapshot,
+} from '@shared/token-estimate'
 import styles from './ReportView.module.css'
 
 interface ReportViewProps {
@@ -25,6 +31,8 @@ interface ReportViewProps {
   sessionName?: string
   requests?: CapturedRequest[]
   hooks?: JsHookRecord[]
+  /** 外部传入的上下文占用快照；缺省时组件内估算 */
+  contextUsage?: ContextUsageSnapshot | null
 }
 
 function formatTokens(tokens: number | null): string {
@@ -123,11 +131,45 @@ const ReportView: React.FC<ReportViewProps> = ({
   sessionName,
   requests = [],
   hooks = [],
+  contextUsage: contextUsageProp = null,
 }) => {
   const { t } = useLocale()
   const [chatInput, setChatInput] = useState('')
   const [showAiLog, setShowAiLog] = useState(false)
   const reportBodyRef = useRef<HTMLDivElement>(null)
+  const [budgetCfg, setBudgetCfg] = useState({
+    maxContextTokens: 200_000,
+    reserveCompletionTokens: 8_192,
+    compressionPeak: 0.85,
+  })
+
+  useEffect(() => {
+    let alive = true
+    window.electronAPI.getLLMConfig?.().then((config) => {
+      if (!alive || !config?.contextBudget) return
+      const b = config.contextBudget
+      setBudgetCfg({
+        maxContextTokens: b.maxContextTokens ?? 200_000,
+        reserveCompletionTokens: b.reserveCompletionTokens ?? 8_192,
+        compressionPeak: b.compressionPeak ?? 0.85,
+      })
+    }).catch(() => { /* ignore */ })
+    return () => { alive = false }
+  }, [])
+
+  const localUsage = React.useMemo(() => {
+    const messages = chatHistory.map((m) => ({ content: stripToolContext(m.content) }))
+    if (streamingContent) messages.push({ content: streamingContent })
+    // 无历史时用报告正文估一个底数
+    if (messages.length === 0 && report?.report_content) {
+      messages.push({ content: report.report_content })
+    }
+    const used = estimateMessagesTokensByContent(messages)
+    return buildContextUsageSnapshot(used, budgetCfg)
+  }, [chatHistory, streamingContent, report?.report_content, budgetCfg])
+
+  const usage = contextUsageProp ?? localUsage
+
 
   // Auto-scroll report body when streaming or new chat messages arrive
   useEffect(() => {
@@ -233,6 +275,16 @@ const ReportView: React.FC<ReportViewProps> = ({
               {formatTokens(report.prompt_tokens + report.completion_tokens)} tokens
             </div>
           )}
+          <div style={{ marginTop: 10 }}>
+            <ContextUsageBar
+              usedTokens={usage.usedTokens}
+              maxContextTokens={usage.maxContextTokens}
+              usableTokens={usage.usableTokens}
+              peakRatio={usage.peakRatio}
+              absoluteRatio={usage.absoluteRatio}
+              usageRatio={usage.usageRatio}
+            />
+          </div>
         </div>
       )}
     </div>
@@ -340,6 +392,7 @@ const ReportView: React.FC<ReportViewProps> = ({
               </ReactMarkdown>
             </div>
 
+
             {/* Chat history */}
             {chatHistory.slice(2).map((msg, i) => (
               <div key={i} className={`${styles.chatMsg} ${msg.role === 'user' ? styles.chatMsgUser : styles.chatMsgAi}`}>
@@ -380,6 +433,15 @@ const ReportView: React.FC<ReportViewProps> = ({
 
         {/* Chat section */}
         <div className={styles.chatSection}>
+          <ContextUsageBar
+            usedTokens={usage.usedTokens}
+            maxContextTokens={usage.maxContextTokens}
+            usableTokens={usage.usableTokens}
+            peakRatio={usage.peakRatio}
+            absoluteRatio={usage.absoluteRatio}
+            usageRatio={usage.usageRatio}
+            compact
+          />
           <div className={styles.chatSuggestions}>
             {QUICK_QUESTION_KEYS.map((key, i) => {
               const text = t(key)

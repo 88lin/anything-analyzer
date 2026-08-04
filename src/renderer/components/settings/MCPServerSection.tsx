@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { InputNumber, Button, Input, Switch, Badge, useToast } from '../../ui'
 import type { MCPServerSettings } from '@shared/types'
-import { useLocale } from '../../i18n'
 
 export default function MCPServerSection() {
   const toast = useToast()
-  const { t } = useLocale()
   const [enabled, setEnabled] = useState(false)
+  const [host, setHost] = useState('0.0.0.0')
   const [port, setPort] = useState(23816)
   const [authEnabled, setAuthEnabled] = useState(true)
   const [authToken, setAuthToken] = useState('')
@@ -16,6 +15,7 @@ export default function MCPServerSection() {
   useEffect(() => {
     window.electronAPI.getMCPServerConfig().then(config => {
       setEnabled(config.enabled)
+      setHost(config.host ?? '0.0.0.0')
       setPort(config.port)
       setAuthEnabled(config.authEnabled ?? true)
       setAuthToken(config.authToken ?? '')
@@ -41,6 +41,7 @@ export default function MCPServerSection() {
   const maskedToken = authToken
     ? authToken.slice(0, 8) + '••••••••' + authToken.slice(-4)
     : ''
+  const displayHost = host.includes(':') ? `[${host}]` : host
 
   const btnStyle: React.CSSProperties = {
     padding: '4px 10px',
@@ -66,6 +67,15 @@ export default function MCPServerSection() {
       {enabled && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 'var(--font-size-base)' }}>监听 IP</span>
+            <Input
+              value={host}
+              onChange={event => setHost(event.target.value)}
+              placeholder="0.0.0.0"
+              style={{ width: 180, fontFamily: 'var(--font-mono)' }}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 'var(--font-size-base)' }}>端口</span>
             <InputNumber
               min={1024}
@@ -84,7 +94,7 @@ export default function MCPServerSection() {
               fontSize: 'var(--font-size-sm)',
               fontFamily: 'var(--font-mono)',
             }}>
-              http://localhost:{port}/mcp
+              http://{displayHost}:{port}/mcp
             </code>
           </div>
 
@@ -123,11 +133,16 @@ export default function MCPServerSection() {
       )}
 
       <Button variant="primary" block onClick={async () => {
-        const config: MCPServerSettings = { enabled, port, authEnabled, authToken }
-        await window.electronAPI.saveMCPServerConfig(config)
-        toast.success('MCP Server 配置已保存')
-        const status = await window.electronAPI.getMCPServerStatus()
-        setRunning(status.running)
+        try {
+          const config: MCPServerSettings = { enabled, host, port, authEnabled, authToken }
+          await window.electronAPI.saveMCPServerConfig(config)
+          toast.success('MCP Server 配置已保存')
+          const status = await window.electronAPI.getMCPServerStatus()
+          setRunning(status.running)
+          setHost(status.host)
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : String(error))
+        }
       }}>
         保存 MCP Server 设置
       </Button>

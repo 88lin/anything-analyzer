@@ -54,6 +54,7 @@ export const zh = {
   'data.clear': '清除',
   'data.selected': '已选',
   'data.total': '共',
+  'data.interactions': '交互录制',
 
   // Browser view
   'browser.start': '开始',
@@ -84,6 +85,11 @@ export const zh = {
   'report.explainCrypto': '详解加密/签名流程',
   'report.securityRisks': '分析潜在安全风险',
   'report.listApiParams': '列出所有 API 参数和响应结构',
+
+  // Context usage
+  'contextBar.title': '上下文占用',
+  'contextBar.available': '可用',
+  'contextBar.peak': '峰值',
 
   // Settings
   'settings.title': '设置',
@@ -122,8 +128,8 @@ export const zh = {
   'fingerprint.regenerated': '已生成新指纹',
   'fingerprint.detail': '详细配置',
   'fingerprint.testLinks': '自测链接',
+
   // Interaction Recording
-  'data.interactions': '交互录制',
   'interaction.noData': '暂无交互录制数据。开始抓包并操作页面即可自动录制。',
   'interaction.click': '点击',
   'interaction.dblclick': '双击',
@@ -152,6 +158,8 @@ export const zh = {
   'aiLog.filterAnalyze': 'analyze',
   'aiLog.filterChat': 'chat',
   'aiLog.filterFilter': 'filter',
+  'aiLog.filterCompress': '压缩',
+  'aiLog.filterSubagent': '子分析',
   'aiLog.noData': '暂无 AI 请求日志。运行一次分析即可开始记录。',
   'aiLog.tabRequest': 'Request Body',
   'aiLog.tabResponse': 'Response Body',

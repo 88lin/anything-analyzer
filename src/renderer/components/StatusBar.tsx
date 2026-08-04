@@ -13,6 +13,9 @@ interface StatusBarProps {
   activeView?: AppView
   llmModel?: string
   tokenCount?: number
+  /** used/usable 0..1+ */
+  contextUsageRatio?: number
+  contextNearPeak?: boolean
 }
 
 const StatusBar: React.FC<StatusBarProps> = ({
@@ -24,6 +27,8 @@ const StatusBar: React.FC<StatusBarProps> = ({
   activeView = 'browser',
   llmModel,
   tokenCount,
+  contextUsageRatio,
+  contextNearPeak,
 }) => {
   const { t } = useLocale()
   const statusLabels: Record<string, { color: string; label: string; pulse: boolean }> = {
@@ -84,6 +89,17 @@ const StatusBar: React.FC<StatusBarProps> = ({
         <div className={styles.item}>
           <span className={styles.label}>Tokens</span>
           <span className={styles.value}>{tokenCount.toLocaleString()}</span>
+        </div>
+      )}
+      {activeView === 'report' && contextUsageRatio != null && (
+        <div className={styles.item}>
+          <span className={styles.label}>Context</span>
+          <span
+            className={styles.value}
+            style={{ color: contextNearPeak || contextUsageRatio >= 0.85 ? 'var(--color-error)' : 'var(--text-secondary)' }}
+          >
+            {Math.round(contextUsageRatio * 100)}%
+          </span>
         </div>
       )}
 

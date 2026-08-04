@@ -37,6 +37,10 @@ import type {
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "node:crypto";
+import {
+  DEFAULT_MCP_LISTEN_HOST,
+  normalizeMCPListenHost,
+} from "./mcp/mcp-server-listen";
 
 /**
  * Register all IPC handlers for communication between renderer and main process.
@@ -559,17 +563,22 @@ export function registerIpcHandlers(deps: {
   });
 
   ipcMain.handle("mcp-server:saveConfig", async (_event, config: MCPServerSettings) => {
-    saveMCPServerConfig(config);
+    const normalizedConfig: MCPServerSettings = {
+      ...config,
+      host: normalizeMCPListenHost(config.host),
+    };
+    saveMCPServerConfig(normalizedConfig);
 
     const { initMCPServer, stopMCPServer, isMCPServerRunning } = await import("./mcp/mcp-server");
-    if (config.enabled && !isMCPServerRunning()) {
+    if (normalizedConfig.enabled) {
       await initMCPServer(
         { sessionManager, aiAnalyzer, windowManager, requestsRepo, jsHooksRepo, storageSnapshotsRepo, reportsRepo, interactionEventsRepo },
-        config.port,
-        config.authEnabled,
-        config.authToken,
+        normalizedConfig.port,
+        normalizedConfig.authEnabled,
+        normalizedConfig.authToken,
+        normalizedConfig.host,
       );
-    } else if (!config.enabled && isMCPServerRunning()) {
+    } else if (isMCPServerRunning()) {
       await stopMCPServer();
     }
   });
@@ -577,7 +586,7 @@ export function registerIpcHandlers(deps: {
   ipcMain.handle("mcp-server:status", async () => {
     const { isMCPServerRunning } = await import("./mcp/mcp-server");
     const config = loadMCPServerConfig();
-    return { running: isMCPServerRunning(), port: config.port };
+    return { running: isMCPServerRunning(), host: config.host, port: config.port };
   });
 
   // ---- MITM Proxy ----
@@ -825,7 +834,13 @@ export async function applyProxy(
 
 // ---- MCP Server config persistence ----
 
-const DEFAULT_MCP_SERVER_CONFIG: MCPServerSettings = { enabled: false, port: 23816, authEnabled: true, authToken: '' };
+const DEFAULT_MCP_SERVER_CONFIG: MCPServerSettings = {
+  enabled: false,
+  host: DEFAULT_MCP_LISTEN_HOST,
+  port: 23816,
+  authEnabled: true,
+  authToken: '',
+};
 
 function getMCPServerConfigPath(): string {
   return join(app.getPath("userData"), "mcp-server-config.json");
@@ -842,6 +857,11 @@ export function loadMCPServerConfig(): MCPServerSettings {
     } catch {
       config = { ...DEFAULT_MCP_SERVER_CONFIG };
     }
+  }
+  try {
+    config.host = normalizeMCPListenHost(config.host);
+  } catch {
+    config.host = DEFAULT_MCP_LISTEN_HOST;
   }
   // Auto-generate token if empty (first run or upgraded from old config)
   if (!config.authToken) {
