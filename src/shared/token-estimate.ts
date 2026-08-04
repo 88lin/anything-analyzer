@@ -81,6 +81,44 @@ export function estimateMessagesTokensByContent(
   return messages.reduce((sum, m) => sum + estimateTextTokens(m.content) + perMessageOverhead, 0);
 }
 
+interface PromptUsageLog {
+  id: number;
+  type: string;
+  prompt_tokens: number;
+  completion_tokens?: number;
+  error: string | null;
+}
+
+/**
+ * 当前上下文取最后一次主分析/追问请求的真实输入 token。
+ * filter/compress/subagent 和 completion token 都不代表当前对话上下文占用。
+ */
+export function findLatestConversationPromptTokens(logs: PromptUsageLog[]): number | null {
+  const latest = [...logs]
+    .filter((log) =>
+      (log.type === "analyze" || log.type === "chat")
+      && !log.error
+      && Number.isFinite(log.prompt_tokens)
+      && log.prompt_tokens > 0,
+    )
+    .sort((a, b) => b.id - a.id)[0];
+  return latest?.prompt_tokens ?? null;
+}
+
+export function resolveContextUsedTokens(input: {
+  latestPromptTokens?: number | null;
+  reportPromptTokens?: number | null;
+  fallbackMessages: Array<{ content: string }>;
+}): number {
+  if (input.latestPromptTokens != null && input.latestPromptTokens > 0) {
+    return input.latestPromptTokens;
+  }
+  if (input.reportPromptTokens != null && input.reportPromptTokens > 0) {
+    return input.reportPromptTokens;
+  }
+  return estimateMessagesTokensByContent(input.fallbackMessages);
+}
+
 export interface ContextUsageSnapshot {
   usedTokens: number;
   maxContextTokens: number;

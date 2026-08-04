@@ -16,7 +16,7 @@ import StorageView from './components/StorageView'
 import ReportView from './components/ReportView'
 import {
   buildContextUsageSnapshot,
-  estimateMessagesTokensByContent,
+  resolveContextUsedTokens,
 } from '@shared/token-estimate'
 import { stripToolContext } from '@shared/types'
 import InteractionLog from './components/InteractionLog'
@@ -122,7 +122,7 @@ function App(): React.ReactElement {
   /** Ref to browser placeholder for reporting exact bounds to main process */
   const placeholderRef = useRef<HTMLDivElement>(null)
 
-  const { requests, hooks, snapshots, reports, interactions, isAnalyzing, analysisError, streamingContent, startAnalysis, cancelAnalysis, chatHistory, isChatting, chatError, sendFollowUp, clearCaptureData } = useCapture(currentSessionId)
+  const { requests, hooks, snapshots, reports, interactions, isAnalyzing, analysisError, streamingContent, startAnalysis, cancelAnalysis, chatHistory, latestContextTokens, isChatting, chatError, sendFollowUp, clearCaptureData } = useCapture(currentSessionId)
 
   const [budgetCfg, setBudgetCfg] = useState({
     maxContextTokens: 200_000,
@@ -146,13 +146,16 @@ function App(): React.ReactElement {
 
   const contextUsage = useMemo(() => {
     const messages = chatHistory.map((m) => ({ content: stripToolContext(m.content) }))
-    if (streamingContent) messages.push({ content: streamingContent })
     if (messages.length === 0 && reports[0]?.report_content) {
       messages.push({ content: reports[0].report_content })
     }
-    const used = estimateMessagesTokensByContent(messages)
+    const used = resolveContextUsedTokens({
+      latestPromptTokens: latestContextTokens,
+      reportPromptTokens: reports[0]?.prompt_tokens,
+      fallbackMessages: messages,
+    })
     return buildContextUsageSnapshot(used, budgetCfg)
-  }, [chatHistory, streamingContent, reports, budgetCfg])
+  }, [chatHistory, latestContextTokens, reports, budgetCfg])
 
 
   const selectedRequest = requests.find(r => r.id === selectedRequestId) || null

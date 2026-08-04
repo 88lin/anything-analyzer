@@ -5,7 +5,9 @@ import {
   estimateMessagesTokensByContent,
   estimateTextTokens,
   estimateTextTokensRaw,
+  findLatestConversationPromptTokens,
   getTokenEstimateCalibration,
+  resolveContextUsedTokens,
   resetTokenEstimateCalibration,
 } from "../../../src/shared/token-estimate";
 
@@ -48,5 +50,25 @@ describe("token-estimate", () => {
       { content: "用户问题" },
     ]);
     expect(n).toBeGreaterThan(0);
+  });
+
+  it("uses the latest analyze/chat prompt tokens instead of output or auxiliary usage", () => {
+    const latest = findLatestConversationPromptTokens([
+      { id: 10, type: "analyze", prompt_tokens: 12_000, completion_tokens: 900, error: null },
+      { id: 11, type: "compress", prompt_tokens: 4_000, completion_tokens: 600, error: null },
+      { id: 12, type: "chat", prompt_tokens: 18_000, completion_tokens: 8_000, error: null },
+    ]);
+
+    expect(latest).toBe(18_000);
+  });
+
+  it("prefers actual prompt usage and never adds completion tokens", () => {
+    const used = resolveContextUsedTokens({
+      latestPromptTokens: 18_000,
+      reportPromptTokens: 12_000,
+      fallbackMessages: [{ content: "x".repeat(100_000) }],
+    });
+
+    expect(used).toBe(18_000);
   });
 });

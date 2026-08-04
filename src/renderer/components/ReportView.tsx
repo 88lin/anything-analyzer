@@ -11,7 +11,7 @@ import { AiLogView } from './AiLogView'
 import ContextUsageBar from './ContextUsageBar'
 import {
   buildContextUsageSnapshot,
-  estimateMessagesTokensByContent,
+  resolveContextUsedTokens,
   type ContextUsageSnapshot,
 } from '@shared/token-estimate'
 import styles from './ReportView.module.css'
@@ -159,14 +159,16 @@ const ReportView: React.FC<ReportViewProps> = ({
 
   const localUsage = React.useMemo(() => {
     const messages = chatHistory.map((m) => ({ content: stripToolContext(m.content) }))
-    if (streamingContent) messages.push({ content: streamingContent })
     // 无历史时用报告正文估一个底数
     if (messages.length === 0 && report?.report_content) {
       messages.push({ content: report.report_content })
     }
-    const used = estimateMessagesTokensByContent(messages)
+    const used = resolveContextUsedTokens({
+      reportPromptTokens: report?.prompt_tokens,
+      fallbackMessages: messages,
+    })
     return buildContextUsageSnapshot(used, budgetCfg)
-  }, [chatHistory, streamingContent, report?.report_content, budgetCfg])
+  }, [chatHistory, report?.prompt_tokens, report?.report_content, budgetCfg])
 
   const usage = contextUsageProp ?? localUsage
 
