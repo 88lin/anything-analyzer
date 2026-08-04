@@ -1,29 +1,26 @@
-# Anything Analyzer v3.6.53
+# Anything Analyzer v3.6.54
 
 ## 新增
 
-- **索引优先 AI 上下文** — 初始分析仅发送请求类型、地址、时间等紧凑索引，模型可通过 `list_requests`、`search_requests`、`get_request_detail` 按需获取正文。
-- **可配置上下文预算** — 默认最大上下文 200k、压缩峰值 85%，支持规则压缩与 LLM 混合摘要，压缩结果强制收敛到目标 token 预算。
-- **并行子分析器** — 大型请求会话可分块并行提取导航线索，主模型继续使用请求工具验证真实详情。
-- **MCP Server 自定义监听 IP** — 支持 IPv4/IPv6 地址，修改监听 IP、端口或鉴权配置后自动重启服务。
+- **会话交互读取工具** — AI 分析与追问新增 `read_session_interactions`，可按操作类型、页面和关键字读取点击、输入、滚动及目标元素详情。
+- **会话 Hook 读取工具** — AI 分析与追问新增 `read_session_hooks`，可分页查看未关联 HTTP 请求的 Hook 参数、结果和调用栈。
 
 ## 优化
 
-- **大列表渲染性能** — 请求表改为可见区虚拟化、滚动帧合并和增量索引，降低持续抓包时的渲染阻塞。
-- **Token 校准与可观测性** — 校准数据按 provider/model/API 类型隔离并原子持久化；分析、压缩和子分析请求按真实日志 ID 回填 usage。
-- **上下文用量展示** — 报告页与状态栏展示当前 token 使用量、峰值和最大上下文配置。
+- **真实操作元素定位** — 点击嵌套文本、图标或 SVG 时，自动提升到最近的按钮、链接、输入框等可交互控件，记录稳定的 selector、XPath 和元素属性。
+- **分析工具引导** — 分析提示会在需要还原用户操作或检查独立 JS 调用时主动使用 Interactions/Hooks 工具。
 
 ## 修复
 
-- **上下文压缩可靠性** — 修复混合摘要读取已截断历史、错误响应被当成摘要以及压缩后仍可能超预算的问题。
-- **Tool Loop 校准污染** — 多轮工具调用的累计 usage 不再用于单轮 prompt 估算校准。
-- **更新动态图标溢出** — 将旋转动画限制在 SVG 视口和按钮图标容器内，避免超出父元素边界。
+- **Interaction 录制可靠性** — 交互脚本完成注入后再开启录制，避免初始化时序导致页面操作未被记录。
+- **CDP 附加失败丢失交互** — Interaction 录制与 CDP 调试器解耦，即使目标页面无法附加 CDP，也能继续记录元素操作。
+- **页面导航后停止录制** — 页面完整导航后自动重新注入交互脚本，并清理旧监听器，避免暂停、恢复或多次导航后失效或重复记录。
 
 ## 下载
 
 | 平台 | 文件 |
 |------|------|
-| Windows | Anything-Analyzer-Setup-3.6.53.exe |
-| macOS (Apple Silicon) | Anything-Analyzer-3.6.53-arm64.dmg |
-| macOS (Intel) | Anything-Analyzer-3.6.53-x64.dmg |
-| Linux | Anything-Analyzer-3.6.53.AppImage |
+| Windows | Anything-Analyzer-Setup-3.6.54.exe |
+| macOS (Apple Silicon) | Anything-Analyzer-3.6.54-arm64.dmg |
+| macOS (Intel) | Anything-Analyzer-3.6.54-x64.dmg |
+| Linux | Anything-Analyzer-3.6.54.AppImage |

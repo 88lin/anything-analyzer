@@ -16,6 +16,7 @@ import type {
   StorageSnapshotsRepo,
   AnalysisReportsRepo,
   AiRequestLogRepo,
+  InteractionEventsRepo,
 } from "../db/repositories";
 import { DataAssembler } from "./data-assembler";
 import { PromptBuilder } from "./prompt-builder";
@@ -28,6 +29,7 @@ import {
   type MessageLike,
 } from "./context-budget";
 import { BUILTIN_REQUEST_TOOLS, dispatchBuiltinRequestTool } from "./request-tools";
+import { BUILTIN_CAPTURE_TOOLS, dispatchBuiltinCaptureTool } from "./capture-tools";
 import { loadTokenCalibration, saveTokenCalibration } from "./token-calibration-store";
 import { SubagentAnalyzer } from "./subagent-analyzer";
 import {
@@ -63,6 +65,7 @@ export class AiAnalyzer {
     private storageSnapshotsRepo: StorageSnapshotsRepo,
     private reportsRepo: AnalysisReportsRepo,
     private aiRequestLogRepo: AiRequestLogRepo,
+    private interactionEventsRepo: InteractionEventsRepo,
   ) {}
 
   /**
@@ -125,13 +128,31 @@ export class AiAnalyzer {
         recordToolSessionActivity(sessionId, reportId, builtin.fetchedSeqs, builtin.refLine);
         return builtin.result;
       }
+      const captureBuiltin = dispatchBuiltinCaptureTool(
+        name,
+        args,
+        this.jsHooksRepo.findBySession(sessionId),
+        this.interactionEventsRepo.findBySession(sessionId, 10_000),
+      );
+      if (captureBuiltin) {
+        recordToolSessionActivity(
+          sessionId,
+          reportId,
+          captureBuiltin.fetchedSeqs,
+          captureBuiltin.refLine,
+        );
+        return captureBuiltin.result;
+      }
       if (this.mcpManager) return this.mcpManager.callTool(name, args);
       throw new Error(`Tool not found: ${name}`);
     };
   }
 
   private collectTools(hasRequests: boolean): MCPToolInfo[] {
-    const builtinTools = hasRequests ? BUILTIN_REQUEST_TOOLS : [];
+    const builtinTools = [
+      ...(hasRequests ? BUILTIN_REQUEST_TOOLS : []),
+      ...BUILTIN_CAPTURE_TOOLS,
+    ];
     const mcpTools = this.mcpManager?.hasConnections() ? this.mcpManager.listAllTools() : [];
     return [...builtinTools, ...mcpTools];
   }

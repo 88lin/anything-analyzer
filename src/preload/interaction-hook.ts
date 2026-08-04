@@ -122,12 +122,27 @@
     return attrs
   }
 
+  function getActionElement(target: EventTarget | null): Element | null {
+    if (!(target instanceof Element)) return null
+    return target.closest([
+      'button',
+      'a[href]',
+      'input',
+      'textarea',
+      'select',
+      '[role="button"]',
+      '[role="link"]',
+      '[contenteditable="true"]',
+      '[tabindex]',
+    ].join(',')) || target
+  }
+
   // ---- Event Handlers ----
 
   // Click
   document.addEventListener('click', (e: MouseEvent) => {
     if (!isRecording) return
-    const el = e.target as Element
+    const el = getActionElement(e.target)
     if (!el) return
     send({
       interactionType: 'click',
@@ -150,7 +165,7 @@
   // Double click
   document.addEventListener('dblclick', (e: MouseEvent) => {
     if (!isRecording) return
-    const el = e.target as Element
+    const el = getActionElement(e.target)
     if (!el) return
     send({
       interactionType: 'dblclick',

@@ -289,6 +289,12 @@ export class SessionManager {
     if (this.tabCaptures.has(tabId)) return;
     if (webContents.isDestroyed()) return;
 
+    // Interaction recording does not require CDP. Attach it first so element
+    // actions remain available even when debugger attachment is unavailable.
+    if (this.interactionRecorder) {
+      await this.interactionRecorder.injectIntoWebContents(webContents);
+    }
+
     const cdp = new CdpManager();
     const injector = new JsInjector();
     const storage = new StorageCollector();
@@ -311,11 +317,6 @@ export class SessionManager {
 
     // Start JS injector (injection only, no IPC listener)
     injector.start(webContents);
-
-    // Inject interaction recording script into this tab
-    if (this.interactionRecorder) {
-      this.interactionRecorder.injectIntoWebContents(webContents);
-    }
 
     // Inject stealth script via CDP — runs BEFORE any page JS (critical for WAF challenges)
     let stealthCleanup: (() => void) | undefined;

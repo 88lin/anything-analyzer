@@ -72,9 +72,10 @@ export class PromptBuilder {
     const toolHint = indexFirst || hasExtraIndex
       ? "\n你可以使用 list_requests / search_requests / get_request_detail 工具按需缩小范围并查看请求详情。首轮上下文仅提供请求索引，不要假设正文已内联；信息不足时主动调用工具。"
       : "";
+    const captureToolHint = "\n需要还原用户具体元素操作或检查未关联请求的 JS 调用时，主动使用 read_session_interactions / read_session_hooks。";
 
     const system = (template?.systemPrompt
-      || `你是一位网站协议分析专家。你的任务是分析用户在网站上的操作过程中产生的HTTP请求、JS调用和存储变化，识别其业务场景，并生成结构化的协议分析报告。Be precise and technical. Output in Chinese (Simplified).`) + toolHint;
+      || `你是一位网站协议分析专家。你的任务是分析用户在网站上的操作过程中产生的HTTP请求、JS调用和存储变化，识别其业务场景，并生成结构化的协议分析报告。Be precise and technical. Output in Chinese (Simplified).`) + toolHint + captureToolHint;
 
     const analysisRequirements = template?.requirements
       || this.buildAnalysisRequirements(purpose);
@@ -117,7 +118,9 @@ ${analysisRequirements}
 1. 先根据请求索引定位关键请求（登录/鉴权/业务 API/流式端点）
 2. 索引很长时先用 list_requests 过滤，或用 search_requests 按关键字搜索
 3. 使用 get_request_detail 按需拉取 1~5 条详情，再继续分析
-4. 不要编造未通过工具确认的请求体或响应体字段`;
+4. 需要还原用户点击、输入、滚动及目标元素时，使用 read_session_interactions
+5. 需要查看独立 JS Hook 参数、结果或调用栈时，使用 read_session_hooks
+6. 不要编造未通过工具确认的请求体或响应体字段`;
       return { system, user };
     }
 

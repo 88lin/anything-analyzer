@@ -15,6 +15,7 @@ export class InteractionRecorder extends EventEmitter {
   private recording = false
   private scriptContent: string | null = null
   private injectedWebContents: Set<WebContents> = new Set()
+  private navigationHandlers = new Map<WebContents, () => void>()
 
   constructor(private repo: InteractionEventsRepo) {
     super()
@@ -32,36 +33,30 @@ export class InteractionRecorder extends EventEmitter {
    * Inject interaction-hook script into a WebContents (for multi-tab support).
    * Called by SessionManager when tabs are attached to the capture pipeline.
    */
-  injectIntoWebContents(webContents: WebContents): void {
+  async injectIntoWebContents(webContents: WebContents): Promise<void> {
     this.loadScript()
     if (!this.scriptContent) return
     if (webContents.isDestroyed()) return
-    webContents.executeJavaScript(this.scriptContent, true).catch(() => { /* page not ready or destroyed */ })
+
+    if (this.injectedWebContents.has(webContents)) {
+      await this.setWebContentsRecordingState(webContents)
+      return
+    }
+
+    await this.injectScript(webContents)
 
     this.injectedWebContents.add(webContents)
     webContents.once('destroyed', () => {
       this.injectedWebContents.delete(webContents)
+      this.navigationHandlers.delete(webContents)
     })
 
-    // Set recording state
-    if (this.recording) {
-      webContents.executeJavaScript(
-        `window.postMessage({type:'ar-interaction-control',recording:true},'*')`,
-        true
-      ).catch(() => {})
-    }
-
-    // Re-inject on navigation for this tab
+    // A full navigation replaces the page context, so re-inject after load.
     const handler = () => {
-      if (!this.recording || webContents.isDestroyed()) return
-      webContents.executeJavaScript(this.scriptContent!, true).catch(() => {})
-      webContents.executeJavaScript(
-        `window.postMessage({type:'ar-interaction-control',recording:true},'*')`,
-        true
-      ).catch(() => {})
+      void this.injectScript(webContents)
     }
-    webContents.on('did-navigate', handler)
-    webContents.on('did-navigate-in-page', handler)
+    this.navigationHandlers.set(webContents, handler)
+    webContents.on('did-finish-load', handler)
   }
 
   /** Pause recording (keeps session active) */
@@ -81,6 +76,12 @@ export class InteractionRecorder extends EventEmitter {
     this.recording = false
     this.sessionId = null
     this.rendererWebContents = null
+    for (const [webContents, handler] of this.navigationHandlers) {
+      if (!webContents.isDestroyed()) {
+        webContents.removeListener('did-finish-load', handler)
+      }
+    }
+    this.navigationHandlers.clear()
     this.injectedWebContents.clear()
   }
 
@@ -162,10 +163,28 @@ export class InteractionRecorder extends EventEmitter {
   private setRecordingState(recording: boolean): void {
     for (const wc of this.injectedWebContents) {
       if (wc.isDestroyed()) continue
-      wc.executeJavaScript(
-        `window.postMessage({type:'ar-interaction-control',recording:${recording}},'*')`,
-        true
-      ).catch(() => {})
+      void this.setWebContentsRecordingState(wc, recording)
     }
+  }
+
+  private async injectScript(webContents: WebContents): Promise<void> {
+    if (!this.scriptContent || webContents.isDestroyed()) return
+    try {
+      await webContents.executeJavaScript(this.scriptContent, true)
+      await this.setWebContentsRecordingState(webContents)
+    } catch {
+      // Page may be navigating or already destroyed. The next did-finish-load retries.
+    }
+  }
+
+  private async setWebContentsRecordingState(
+    webContents: WebContents,
+    recording: boolean = this.recording,
+  ): Promise<void> {
+    if (webContents.isDestroyed()) return
+    await webContents.executeJavaScript(
+      `window.postMessage({type:'ar-interaction-control',recording:${recording}},'*')`,
+      true,
+    )
   }
 }

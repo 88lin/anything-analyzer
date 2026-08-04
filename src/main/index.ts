@@ -96,6 +96,7 @@ app.whenReady().then(async () => {
     storageSnapshotsRepo,
     reportsRepo,
     aiRequestLogRepo,
+    interactionEventsRepo,
   );
 
   // Create main window
