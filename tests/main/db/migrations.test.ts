@@ -123,6 +123,46 @@ describeDatabaseMigrations("Database Migrations", () => {
     expect(request.is_websocket).toBe(0);
   });
 
+  it("应该回填 Anthropic 缓存输入 token", () => {
+    const sessionId = "session-anthropic-usage";
+    db!.prepare(
+      "INSERT INTO sessions (id, name, created_at) VALUES (?, ?, ?)",
+    ).run(sessionId, "Anthropic Usage", Date.now());
+    db!.prepare(`
+      INSERT INTO ai_request_logs (
+        session_id, report_id, type, provider, model,
+        request_url, request_method, request_headers, request_body,
+        status_code, response_headers, response_body,
+        prompt_tokens, completion_tokens, duration_ms, error, created_at
+      ) VALUES (?, NULL, ?, ?, ?, ?, 'POST', '{}', '{}', 200, '{}', ?, ?, ?, 10, NULL, ?)
+    `).run(
+      sessionId,
+      "chat",
+      "anthropic",
+      "claude-sonnet-4.5",
+      "https://api.anthropic.com/v1/messages",
+      JSON.stringify({
+        usage: {
+          input_tokens: 351,
+          cache_creation_input_tokens: 15_204,
+          cache_read_input_tokens: 0,
+          output_tokens: 1_335,
+        },
+      }),
+      351,
+      1_335,
+      Date.now(),
+    );
+
+    runMigrations(db!);
+
+    const log = db!
+      .prepare("SELECT prompt_tokens, completion_tokens FROM ai_request_logs WHERE session_id = ?")
+      .get(sessionId) as { prompt_tokens: number; completion_tokens: number };
+    expect(log.prompt_tokens).toBe(15_555);
+    expect(log.completion_tokens).toBe(1_335);
+  });
+
 });
 
 if (sqliteLoadError) {

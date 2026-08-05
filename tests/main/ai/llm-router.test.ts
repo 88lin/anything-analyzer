@@ -257,6 +257,35 @@ describe("LLMRouter", () => {
       expect(result.completionTokens).toBe(10);
     });
 
+    it("should include Anthropic cache tokens in prompt usage", async () => {
+      const config: LLMProviderConfig = {
+        name: "anthropic",
+        baseUrl: "https://api.anthropic.com/v1",
+        apiKey: "test-anthropic-key",
+        model: "claude-sonnet-4.5",
+        maxTokens: 4096,
+      };
+      fetchSpy.mockResolvedValueOnce(
+        createJSONResponse({
+          content: [{ type: "text", text: "done" }],
+          usage: {
+            input_tokens: 351,
+            cache_creation_input_tokens: 15_204,
+            cache_read_input_tokens: 0,
+            output_tokens: 1_335,
+          },
+        }),
+      );
+      const updateUsage = vi.fn();
+      const router = new LLMRouter(config, () => 40, updateUsage);
+
+      const result = await router.complete([{ role: "user", content: "test" }]);
+
+      expect(result.promptTokens).toBe(15_555);
+      expect(result.completionTokens).toBe(1_335);
+      expect(updateUsage).toHaveBeenCalledWith(40, 15_555, 1_335);
+    });
+
     it("should reject Anthropic-compatible responses without text content", async () => {
       const config: LLMProviderConfig = {
         name: "minimax",
@@ -1083,6 +1112,47 @@ describe("LLMRouter", () => {
   });
 
   describe("completeWithTools - Anthropic", () => {
+    it("should accumulate cached input across tool rounds", async () => {
+      const config: LLMProviderConfig = {
+        name: "anthropic",
+        baseUrl: "https://api.anthropic.com/v1",
+        apiKey: "test-anthropic-key",
+        model: "claude-sonnet-4.5",
+        maxTokens: 4096,
+      };
+      fetchSpy.mockResolvedValueOnce(
+        createJSONResponse({
+          content: [{ type: "tool_use", id: "call-1", name: "lookup", input: {} }],
+          usage: {
+            input_tokens: 0,
+            cache_creation_input_tokens: 56_720,
+            cache_read_input_tokens: 1_482,
+            output_tokens: 13,
+          },
+        }),
+      ).mockResolvedValueOnce(
+        createJSONResponse({
+          content: [{ type: "text", text: "done" }],
+          usage: {
+            input_tokens: 55_859,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 1_460,
+            output_tokens: 74,
+          },
+        }),
+      );
+
+      const router = new LLMRouter(config);
+      const result = await router.completeWithTools(
+        [{ role: "user", content: "hello" }],
+        [{ name: "lookup", description: "Lookup", inputSchema: { type: "object" } }],
+        async () => "tool result",
+      );
+
+      expect(result.promptTokens).toBe(115_521);
+      expect(result.completionTokens).toBe(87);
+    });
+
     it("should reject Anthropic tool uses without id", async () => {
       const config: LLMProviderConfig = {
         name: "minimax",
@@ -1503,6 +1573,38 @@ describe("LLMRouter", () => {
   });
 
   describe("completeAnthropic - streaming", () => {
+    it("should include cache tokens from message_start usage", async () => {
+      const config: LLMProviderConfig = {
+        name: "anthropic",
+        baseUrl: "https://api.anthropic.com/v1",
+        apiKey: "test-anthropic-key",
+        model: "claude-sonnet-4.5",
+        maxTokens: 4096,
+      };
+      fetchSpy.mockResolvedValueOnce(
+        createSSEResponse([
+          {
+            data: '{"type":"message_start","message":{"usage":{"input_tokens":351,"cache_creation_input_tokens":15204,"cache_read_input_tokens":0}}}',
+          },
+          {
+            data: '{"type":"content_block_delta","delta":{"type":"text_delta","text":"done"}}',
+          },
+          {
+            data: '{"type":"message_delta","usage":{"output_tokens":1335}}',
+          },
+        ]),
+      );
+
+      const router = new LLMRouter(config);
+      const result = await router.complete(
+        [{ role: "user", content: "test" }],
+        () => {},
+      );
+
+      expect(result.promptTokens).toBe(15_555);
+      expect(result.completionTokens).toBe(1_335);
+    });
+
     it("should reject when Anthropic stream emits an error payload", async () => {
       const config: LLMProviderConfig = {
         name: "minimax",

@@ -62,6 +62,13 @@ interface AnthropicToolUseBlock {
 
 type AnthropicContentBlock = AnthropicTextBlock | AnthropicToolUseBlock;
 
+interface AnthropicUsage {
+  input_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+  output_tokens?: number;
+}
+
 const DEFAULT_TIMEOUT = 600000; // 10 minutes — LLM relay servers can be slow; user can cancel manually
 
 interface ResponsesOutputItem {
@@ -154,6 +161,13 @@ function readAnthropicTextContent(data: {
   }
 
   return content;
+}
+
+function readAnthropicPromptTokens(usage?: AnthropicUsage): number {
+  if (!usage) return 0;
+  return (usage.input_tokens || 0)
+    + (usage.cache_creation_input_tokens || 0)
+    + (usage.cache_read_input_tokens || 0);
 }
 
 /**
@@ -505,10 +519,10 @@ export class LLMRouter {
       const data = await this.safeParseJson<{
         content: AnthropicContentBlock[];
         stop_reason: string;
-        usage?: { input_tokens: number; output_tokens: number };
+        usage?: AnthropicUsage;
       }>(response);
 
-      const roundPromptTokens = data.usage?.input_tokens || 0;
+      const roundPromptTokens = readAnthropicPromptTokens(data.usage);
       const roundCompletionTokens = data.usage?.output_tokens || 0;
       totalPromptTokens += roundPromptTokens;
       totalCompletionTokens += roundCompletionTokens;
@@ -831,13 +845,13 @@ export class LLMRouter {
 
     const data = await this.safeParseJson<{
       content: Array<{ type: string; text: string }>;
-      usage?: { input_tokens: number; output_tokens: number };
+      usage?: AnthropicUsage;
     }>(response);
     if (!Array.isArray(data.content)) {
       throw new Error(`LLM 响应格式异常: 缺少 content 字段 — ${JSON.stringify(data).slice(0, 200)}`);
     }
     const content = readAnthropicTextContent(data);
-    const promptTokens = data.usage?.input_tokens || 0;
+    const promptTokens = readAnthropicPromptTokens(data.usage);
     const completionTokens = data.usage?.output_tokens || 0;
     this.recordResponseUsage(response, promptTokens, completionTokens);
     return { content, promptTokens, completionTokens };
@@ -977,7 +991,7 @@ export class LLMRouter {
         }
       }
       if (parsed.type === "message_start" && parsed.message?.usage)
-        promptTokens = parsed.message.usage.input_tokens;
+        promptTokens = readAnthropicPromptTokens(parsed.message.usage);
       if (parsed.type === "message_delta" && parsed.usage)
         completionTokens = parsed.usage.output_tokens || 0;
     };

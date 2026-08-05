@@ -1,4 +1,5 @@
 import React from 'react'
+import { formatContextUsagePercent } from '@shared/token-estimate'
 import { useLocale } from '../i18n'
 import type { SessionStatus } from '@shared/types'
 import type { AppView } from './Titlebar'
@@ -13,7 +14,7 @@ interface StatusBarProps {
   activeView?: AppView
   llmModel?: string
   tokenCount?: number
-  /** used/usable 0..1+ */
+  /** used/max 0..1+ */
   contextUsageRatio?: number
   contextNearPeak?: boolean
 }
@@ -98,7 +99,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
             className={styles.value}
             style={{ color: contextNearPeak || contextUsageRatio >= 0.85 ? 'var(--color-error)' : 'var(--text-secondary)' }}
           >
-            {Math.round(contextUsageRatio * 100)}%
+            {formatContextUsagePercent(contextUsageRatio)}
           </span>
         </div>
       )}

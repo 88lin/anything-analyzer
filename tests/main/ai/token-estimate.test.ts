@@ -6,6 +6,7 @@ import {
   estimateTextTokens,
   estimateTextTokensRaw,
   findLatestConversationPromptTokens,
+  formatContextUsagePercent,
   getTokenEstimateCalibration,
   resolveContextUsedTokens,
   resetTokenEstimateCalibration,
@@ -40,8 +41,20 @@ describe("token-estimate", () => {
       compressionPeak: 0.85,
     });
     expect(snap.usableTokens).toBe(90_000);
+    expect(snap.remainingTokens).toBe(0);
     expect(snap.usageRatio).toBeCloseTo(1, 5);
     expect(snap.overPeak).toBe(true);
+  });
+
+  it("reports remaining usable tokens and preserves sub-percent usage", () => {
+    const snap = buildContextUsageSnapshot(351, {
+      maxContextTokens: 200_000,
+      reserveCompletionTokens: 8_192,
+    });
+
+    expect(snap.usableTokens).toBe(191_808);
+    expect(snap.remainingTokens).toBe(191_457);
+    expect(formatContextUsagePercent(snap.absoluteRatio)).toBe("0.2%");
   });
 
   it("estimates multi-message content", () => {
@@ -60,6 +73,43 @@ describe("token-estimate", () => {
     ]);
 
     expect(latest).toBe(18_000);
+  });
+
+  it("keeps context usage scoped to the current report conversation", () => {
+    const latest = findLatestConversationPromptTokens([
+      {
+        id: 35,
+        type: "analyze",
+        report_id: null,
+        created_at: 1_000,
+        prompt_tokens: 250_011,
+        completion_tokens: 4_991,
+        error: null,
+      },
+      {
+        id: 40,
+        type: "chat",
+        report_id: "report-1",
+        created_at: 2_000,
+        prompt_tokens: 15_555,
+        completion_tokens: 1_335,
+        error: null,
+      },
+      {
+        id: 44,
+        type: "analyze",
+        report_id: null,
+        created_at: 4_000,
+        prompt_tokens: 57_319,
+        completion_tokens: 74,
+        error: null,
+      },
+    ], {
+      id: "report-1",
+      created_at: 1_100,
+    });
+
+    expect(latest).toBe(15_555);
   });
 
   it("prefers actual prompt usage and never adds completion tokens", () => {

@@ -84,24 +84,50 @@ export function estimateMessagesTokensByContent(
 interface PromptUsageLog {
   id: number;
   type: string;
+  report_id?: string | null;
+  created_at?: number;
   prompt_tokens: number;
   completion_tokens?: number;
   error: string | null;
+}
+
+interface PromptUsageReportScope {
+  id: string;
+  created_at: number;
 }
 
 /**
  * 当前上下文取最后一次主分析/追问请求的真实输入 token。
  * filter/compress/subagent 和 completion token 都不代表当前对话上下文占用。
  */
-export function findLatestConversationPromptTokens(logs: PromptUsageLog[]): number | null {
-  const latest = [...logs]
-    .filter((log) =>
-      (log.type === "analyze" || log.type === "chat")
-      && !log.error
-      && Number.isFinite(log.prompt_tokens)
-      && log.prompt_tokens > 0,
-    )
-    .sort((a, b) => b.id - a.id)[0];
+export function findLatestConversationPromptTokens(
+  logs: PromptUsageLog[],
+  report?: PromptUsageReportScope | null,
+): number | null {
+  const successful = logs.filter((log) =>
+    (log.type === "analyze" || log.type === "chat")
+    && !log.error
+    && Number.isFinite(log.prompt_tokens)
+    && log.prompt_tokens > 0,
+  );
+  const latestOf = (items: PromptUsageLog[]): PromptUsageLog | undefined =>
+    [...items].sort((a, b) => b.id - a.id)[0];
+
+  if (report) {
+    const latestChat = latestOf(successful.filter((log) =>
+      log.type === "chat" && log.report_id === report.id,
+    ));
+    if (latestChat) return latestChat.prompt_tokens;
+
+    const latestAnalyze = latestOf(successful.filter((log) =>
+      log.type === "analyze"
+      && log.created_at != null
+      && log.created_at <= report.created_at,
+    ));
+    return latestAnalyze?.prompt_tokens ?? null;
+  }
+
+  const latest = latestOf(successful);
   return latest?.prompt_tokens ?? null;
 }
 
@@ -123,6 +149,7 @@ export interface ContextUsageSnapshot {
   usedTokens: number;
   maxContextTokens: number;
   usableTokens: number;
+  remainingTokens: number;
   reserveCompletionTokens: number;
   peakRatio: number;
   /** 0..1+ relative to usable */
@@ -131,6 +158,14 @@ export interface ContextUsageSnapshot {
   absoluteRatio: number;
   nearPeak: boolean;
   overPeak: boolean;
+}
+
+export function formatContextUsagePercent(ratio: number): string {
+  const percentage = Math.max(0, ratio * 100);
+  if (!Number.isFinite(percentage) || percentage === 0) return "0%";
+  if (percentage < 0.1) return "<0.1%";
+  if (percentage < 10) return `${percentage.toFixed(1)}%`;
+  return `${Math.round(percentage)}%`;
 }
 
 export function buildContextUsageSnapshot(
@@ -150,6 +185,7 @@ export function buildContextUsageSnapshot(
     usedTokens,
     maxContextTokens,
     usableTokens,
+    remainingTokens: Math.max(0, usableTokens - usedTokens),
     reserveCompletionTokens,
     peakRatio,
     usageRatio,

@@ -1,22 +1,23 @@
-# Anything Analyzer v3.6.55
-
-## 优化
-
-- **真实上下文用量来源** — 上下文占用优先读取最后一轮主分析或追问请求返回的真实 `prompt_tokens`，不再依赖输出文本长度推算。
-- **旧报告兼容** — 缺少 AI 请求日志的历史报告会回退到报告输入 token，再回退到本地消息估算，保持旧数据可用。
+# Anything Analyzer v3.6.56
 
 ## 修复
 
-- **输出 Token 被计入上下文** — 修复流式 completion 内容推动“已使用上下文”持续增长的问题，`completion_tokens` 不再计入上下文窗口占用。
-- **Tool Loop 累计值误差** — 上下文计数只取最后一轮 `analyze/chat` 的输入 token，不再使用多轮工具调用累计值。
-- **辅助请求污染计数** — `filter`、`compress`、`subagent` 等辅助 LLM 请求不再覆盖主对话上下文用量。
-- **会话恢复计数不一致** — 初次分析、追问完成及重新打开会话时统一刷新真实上下文用量。
+- **Anthropic 上下文计数缺失** — `prompt_tokens` 现在包含普通输入、缓存创建输入和缓存命中输入，不再只显示未缓存部分。
+- **历史日志统计错误** — 启动时自动、幂等地回填已有 Anthropic 请求日志中的缓存输入 token。
+- **失败分析污染当前报告** — 上下文用量限定到当前报告及其追问，后续失败分析的中间成功轮次不再覆盖现有报告统计。
+- **可用量语义错误** — 上下文面板改为展示扣除当前占用后的真实剩余 token，而非固定可用上限。
+- **低占用显示为 0%** — 百分比保留小数或显示 `<0.1%`，主面板与底部状态栏使用统一口径。
+
+## 优化
+
+- **压缩峰值标记** — 峰值位置按可用上下文计算，与实际压缩触发阈值保持一致。
+- **Token 统计回归覆盖** — 新增 Anthropic 非流式、流式、Tool Loop、历史回填和当前报告作用域测试。
 
 ## 下载
 
 | 平台 | 文件 |
 |------|------|
-| Windows | Anything-Analyzer-Setup-3.6.55.exe |
-| macOS (Apple Silicon) | Anything-Analyzer-3.6.55-arm64.dmg |
-| macOS (Intel) | Anything-Analyzer-3.6.55-x64.dmg |
-| Linux | Anything-Analyzer-3.6.55.AppImage |
+| Windows | Anything-Analyzer-Setup-3.6.56.exe |
+| macOS (Apple Silicon) | Anything-Analyzer-3.6.56-arm64.dmg |
+| macOS (Intel) | Anything-Analyzer-3.6.56-x64.dmg |
+| Linux | Anything-Analyzer-3.6.56.AppImage |

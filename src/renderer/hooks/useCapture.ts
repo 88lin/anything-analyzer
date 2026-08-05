@@ -88,12 +88,13 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
         window.electronAPI.getInteractions(sid),
         window.electronAPI.getAiRequestLogs(sid),
       ]);
-      const latestContextTokens = findLatestConversationPromptTokens(aiRequestLogs);
+      const sortedReports = [...reports].sort((a, b) => b.created_at - a.created_at);
+      const latestReport = sortedReports[0] ?? null;
+      const latestContextTokens = findLatestConversationPromptTokens(aiRequestLogs, latestReport);
 
       // Restore chat history for the latest report
       let chatHistory: ChatMessage[] = [];
-      if (reports.length > 0) {
-        const latestReport = reports.sort((a, b) => b.created_at - a.created_at)[0];
+      if (latestReport) {
         const savedMessages = await window.electronAPI.getChatMessages(latestReport.id);
         if (savedMessages.length > 0) {
           chatHistory = savedMessages as ChatMessage[];
@@ -136,7 +137,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
           requests: requests.sort((a, b) => a.sequence - b.sequence),
           hooks: hooks.sort((a, b) => b.timestamp - a.timestamp),
           snapshots,
-          reports: reports.sort((a, b) => b.created_at - a.created_at),
+          reports: sortedReports,
           interactions: (interactions || []).sort((a, b) => a.sequence - b.sequence),
           chatHistory,
           latestContextTokens,
@@ -159,7 +160,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
     try {
       const report = await window.electronAPI.startAnalysis(sid, purpose, selectedSeqs);
       const latestContextTokens = await window.electronAPI.getAiRequestLogs(sid)
-        .then(findLatestConversationPromptTokens)
+        .then((logs) => findLatestConversationPromptTokens(logs, report))
         .catch(() => null);
 
       // Only update if session hasn't changed
@@ -244,9 +245,14 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
   const sendFollowUp = useCallback(async (sid: string, message: string) => {
     // Get the latest report ID for persisting chat messages
     let currentReportId = '';
+    let currentReportScope: Pick<AnalysisReport, 'id' | 'created_at'> | null = null;
     setState((prev) => {
       if (prev.reports.length > 0) {
         currentReportId = prev.reports[0].id;
+        currentReportScope = {
+          id: prev.reports[0].id,
+          created_at: prev.reports[0].created_at,
+        };
       }
       return {
         ...prev,
@@ -260,7 +266,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
     try {
       const reply = await window.electronAPI.sendFollowUp(sid, currentReportId, chatHistoryRef.current, message);
       const latestContextTokens = await window.electronAPI.getAiRequestLogs(sid)
-        .then(findLatestConversationPromptTokens)
+        .then((logs) => findLatestConversationPromptTokens(logs, currentReportScope))
         .catch(() => null);
 
       if (sessionIdRef.current === sid) {
