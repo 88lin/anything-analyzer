@@ -1,23 +1,27 @@
-# Anything Analyzer v3.6.57
+# Anything Analyzer v3.6.58
+
+## 新增
+
+- **模型列表加载** — LLM 设置支持从 OpenAI、Anthropic、MiniMax 及兼容服务的 `/models` 接口加载可用模型，同时保留手动输入模型 ID。
+- **AI Report 模型切换** — 报告工具栏新增分析模型下拉框，可选择模型后直接重新分析，无需修改全局默认配置。
+- **报告模型连续性** — 使用指定模型生成报告后，后续追问会继续使用该报告对应的模型。
 
 ## 修复
 
-- **上下文口径不完整** — 下一次请求基础上下文改为最新请求输入 token 加最新回复输出 token，准确表示继续追问前已有内容的占用。
-- **报告累计消耗误作上下文** — 报告生成的多轮累计 API token 不再作为追问会话的上下文占用；首次追问前使用当前消息历史估算。
-- **上下文模型来源不明确** — 上下文统计携带真实请求模型和类型，切换模型后的追问不再与原报告模型混淆。
+- **重新分析显示旧内容** — 重新分析开始时清空旧报告、旧追问、上下文用量和流式状态，不再显示上一轮结果。
+- **异步结果污染** — 会话加载或旧追问延迟返回时，不再覆盖正在进行的新分析状态。
+- **模型接口错误安全** — 模型列表请求增加超时、响应校验和 API Key 脱敏，避免错误信息泄露凭据。
 
-## 优化
+## 验证
 
-- **统计口径明确展示** — 报告面板区分“累计 API 消耗”和“下次请求基础上下文”，并展示输入/输出明细。
-- **状态栏语义统一** — 状态栏明确标记报告模型、累计 Tokens 和下次上下文占用。
-- **上下文组件国际化** — 剩余量、可用上限、占用和峰值文案支持中英文，并明确不包含下一条新输入。
-- **回归测试** — 新增报告累计消耗隔离、最新追问输入输出合计及上下文模型来源测试。
+- 新增重新分析状态、模型枚举和 Report 模型选择回归测试。
+- 全量测试与 Electron 生产构建通过。
 
 ## 下载
 
 | 平台 | 文件 |
 |------|------|
-| Windows | Anything-Analyzer-Setup-3.6.57.exe |
-| macOS (Apple Silicon) | Anything-Analyzer-3.6.57-arm64.dmg |
-| macOS (Intel) | Anything-Analyzer-3.6.57-x64.dmg |
-| Linux | Anything-Analyzer-3.6.57.AppImage |
+| Windows | Anything-Analyzer-Setup-3.6.58.exe |
+| macOS (Apple Silicon) | Anything-Analyzer-3.6.58-arm64.dmg |
+| macOS (Intel) | Anything-Analyzer-3.6.58-x64.dmg |
+| Linux | Anything-Analyzer-3.6.58.AppImage |

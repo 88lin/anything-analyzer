@@ -75,6 +75,8 @@ export const zh = {
   'report.title': '协议分析报告',
   'report.export': '导出 .md',
   'report.reanalyze': '重新分析',
+  'report.analysisModel': '分析模型',
+  'report.refreshModels': '刷新模型列表',
   'report.stopAnalysis': '停止分析',
   'report.startAnalysis': '开始 AI 分析',
   'report.noReport': '暂无分析报告',

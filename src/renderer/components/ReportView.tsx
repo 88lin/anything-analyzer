@@ -22,7 +22,7 @@ interface ReportViewProps {
   isAnalyzing: boolean
   analysisError: string | null
   streamingContent: string
-  onReAnalyze: (purpose?: string) => void
+  onReAnalyze: (model?: string) => void
   onCancelAnalysis: () => void
   chatHistory: ChatMessage[]
   isChatting: boolean
@@ -35,6 +35,11 @@ interface ReportViewProps {
   /** 外部传入的上下文占用快照；缺省时组件内估算 */
   contextUsage?: ContextUsageSnapshot | null
   contextSource?: ConversationTokenUsage | null
+  availableModels?: string[]
+  selectedModel?: string
+  isLoadingModels?: boolean
+  onModelChange?: (model: string) => void
+  onRefreshModels?: () => void
 }
 
 function formatTokens(tokens: number | null): string {
@@ -135,6 +140,11 @@ const ReportView: React.FC<ReportViewProps> = ({
   hooks = [],
   contextUsage: contextUsageProp = null,
   contextSource = null,
+  availableModels = [],
+  selectedModel = '',
+  isLoadingModels = false,
+  onModelChange,
+  onRefreshModels,
 }) => {
   const { t } = useLocale()
   const [chatInput, setChatInput] = useState('')
@@ -216,6 +226,11 @@ const ReportView: React.FC<ReportViewProps> = ({
 
   const endpoints = extractEndpoints(requests)
   const hookSummary = summarizeHooks(hooks)
+  const effectiveModel = selectedModel || report?.llm_model || ''
+  const modelOptions = React.useMemo(
+    () => [...new Set([...availableModels, effectiveModel].filter(Boolean))],
+    [availableModels, effectiveModel],
+  )
 
   // Render right context panel
   const renderContextPanel = () => (
@@ -357,7 +372,7 @@ const ReportView: React.FC<ReportViewProps> = ({
               icon={<IconFileText size={48} style={{ opacity: 0.25 }} />}
               description={t('report.noReport')}
             />
-            <Button variant="primary" icon={<IconRobot size={14} />} onClick={() => onReAnalyze()}>
+            <Button variant="primary" icon={<IconRobot size={14} />} onClick={() => onReAnalyze(effectiveModel)}>
               {t('report.startAnalysis')}
             </Button>
           </div>
@@ -384,11 +399,29 @@ const ReportView: React.FC<ReportViewProps> = ({
       <div className={styles.reportMain}>
         {/* Toolbar */}
         <div className={styles.reportToolbar}>
-          <div className={styles.toolLabel}>{t('capture.autoDetect')}</div>
-          <button className={styles.toolBtnPrimary}>✦ {report.llm_model}</button>
+          <div className={styles.toolLabel}>{t('report.analysisModel')}</div>
+          <select
+            className={styles.modelSelect}
+            value={effectiveModel}
+            disabled={isChatting}
+            onChange={(event) => onModelChange?.(event.target.value)}
+            title={t('report.analysisModel')}
+          >
+            {modelOptions.map(model => (
+              <option key={model} value={model}>{model}</option>
+            ))}
+          </select>
+          <button
+            className={styles.toolBtn}
+            onClick={onRefreshModels}
+            disabled={isLoadingModels || isChatting}
+            title={t('report.refreshModels')}
+          >
+            {isLoadingModels ? '…' : '↻'}
+          </button>
           <div className={styles.toolSpacer} />
           <button className={styles.toolBtn} onClick={handleExport}>⬇ {t('report.export')}</button>
-          <button className={styles.toolBtn} onClick={() => onReAnalyze()}>↻ {t('report.reanalyze')}</button>
+          <button className={styles.toolBtn} disabled={isChatting} onClick={() => onReAnalyze(effectiveModel)}>↻ {t('report.reanalyze')}</button>
           <button className={styles.toolBtn} onClick={() => setShowAiLog(true)}>📋 {t('aiLog.title')}</button>
         </div>
 

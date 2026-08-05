@@ -129,20 +129,62 @@ function App(): React.ReactElement {
     reserveCompletionTokens: 8_192,
     compressionPeak: 0.85,
   })
+  const [defaultModel, setDefaultModel] = useState('')
+  const [selectedAnalysisModel, setSelectedAnalysisModel] = useState('')
+  const [reportModelOptions, setReportModelOptions] = useState<string[]>([])
+  const [isLoadingReportModels, setIsLoadingReportModels] = useState(false)
+  const reportModelsLoadedRef = useRef(false)
 
   useEffect(() => {
     let alive = true
     window.electronAPI.getLLMConfig().then((config) => {
-      if (!alive || !config?.contextBudget) return
-      const b = config.contextBudget
-      setBudgetCfg({
-        maxContextTokens: b.maxContextTokens ?? 200_000,
-        reserveCompletionTokens: b.reserveCompletionTokens ?? 8_192,
-        compressionPeak: b.compressionPeak ?? 0.85,
-      })
+      if (!alive || !config) return
+      setDefaultModel(config.model)
+      setSelectedAnalysisModel(prev => prev || config.model)
+      setReportModelOptions(prev => [...new Set([...prev, config.model].filter(Boolean))])
+      if (config.contextBudget) {
+        const b = config.contextBudget
+        setBudgetCfg({
+          maxContextTokens: b.maxContextTokens ?? 200_000,
+          reserveCompletionTokens: b.reserveCompletionTokens ?? 8_192,
+          compressionPeak: b.compressionPeak ?? 0.85,
+        })
+      }
     }).catch(() => {})
     return () => { alive = false }
   }, [])
+
+  const loadReportModels = useCallback(async () => {
+    setIsLoadingReportModels(true)
+    try {
+      const models = await window.electronAPI.listLLMModels()
+      const currentReportModel = reports[0]?.llm_model
+      setReportModelOptions([
+        ...new Set([...models, defaultModel, currentReportModel].filter((item): item is string => Boolean(item))),
+      ])
+      reportModelsLoadedRef.current = true
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsLoadingReportModels(false)
+    }
+  }, [defaultModel, reports, toast])
+
+  useEffect(() => {
+    if (activeView === 'report' && !reportModelsLoadedRef.current) {
+      loadReportModels().catch(() => {})
+    }
+  }, [activeView, loadReportModels])
+
+  useEffect(() => {
+    const reportModel = reports[0]?.llm_model
+    if (reportModel) {
+      setSelectedAnalysisModel(reportModel)
+      setReportModelOptions(prev => [...new Set([...prev, reportModel])])
+    } else if (defaultModel) {
+      setSelectedAnalysisModel(prev => prev || defaultModel)
+    }
+  }, [reports, defaultModel])
 
   const contextUsage = useMemo(() => {
     const messages = chatHistory.map((m) => ({ content: stripToolContext(m.content) }))
@@ -227,11 +269,15 @@ function App(): React.ReactElement {
   }, [])
 
   // Analyze handler
-  const handleAnalyze = useCallback(async (purpose?: string) => {
+  const handleAnalyze = useCallback(async (purpose?: string, model?: string) => {
     if (!currentSessionId) return
     setActiveView('report')
-    await startAnalysis(currentSessionId, purpose, selectedSeqs.length > 0 ? selectedSeqs : undefined)
+    await startAnalysis(currentSessionId, purpose, selectedSeqs.length > 0 ? selectedSeqs : undefined, model)
   }, [currentSessionId, startAnalysis, selectedSeqs])
+
+  const handleReportAnalyze = useCallback(async (model?: string) => {
+    await handleAnalyze(undefined, model)
+  }, [handleAnalyze])
 
   // Cancel analysis handler
   const handleCancelAnalysis = useCallback(async () => {
@@ -607,7 +653,7 @@ function App(): React.ReactElement {
           isAnalyzing={isAnalyzing}
           analysisError={analysisError}
           streamingContent={streamingContent}
-          onReAnalyze={handleAnalyze}
+          onReAnalyze={handleReportAnalyze}
           onCancelAnalysis={handleCancelAnalysis}
           chatHistory={chatHistory}
           isChatting={isChatting}
@@ -618,6 +664,11 @@ function App(): React.ReactElement {
           hooks={hooks}
           contextUsage={contextUsage}
           contextSource={latestContextUsage}
+          availableModels={reportModelOptions}
+          selectedModel={selectedAnalysisModel}
+          isLoadingModels={isLoadingReportModels}
+          onModelChange={setSelectedAnalysisModel}
+          onRefreshModels={loadReportModels}
         />
       ) : (
         renderEmptyGuide()

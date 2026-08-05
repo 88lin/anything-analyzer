@@ -41,6 +41,7 @@ import {
   DEFAULT_MCP_LISTEN_HOST,
   normalizeMCPListenHost,
 } from "./mcp/mcp-server-listen";
+import { applyModelOverride, fetchLLMModels } from "./ai/model-catalog";
 
 /**
  * Register all IPC handlers for communication between renderer and main process.
@@ -323,9 +324,10 @@ export function registerIpcHandlers(deps: {
 
   // ---- AI Analysis ----
 
-  ipcMain.handle("ai:analyze", async (_event, sessionId: string, purpose?: string, selectedSeqs?: number[]) => {
-    const config = loadLLMConfig();
-    if (!config) throw new Error("LLM provider not configured");
+  ipcMain.handle("ai:analyze", async (_event, sessionId: string, purpose?: string, selectedSeqs?: number[], model?: string) => {
+    const savedConfig = loadLLMConfig();
+    if (!savedConfig) throw new Error("LLM provider not configured");
+    const config = applyModelOverride(savedConfig, model);
 
     const win = windowManager.getMainWindow();
     const onProgress = win
@@ -369,8 +371,13 @@ export function registerIpcHandlers(deps: {
       history: Array<{ role: string; content: string }>,
       userMessage: string,
     ) => {
-      const config = loadLLMConfig();
-      if (!config) throw new Error("LLM provider not configured");
+      const savedConfig = loadLLMConfig();
+      if (!savedConfig) throw new Error("LLM provider not configured");
+      const report = reportId ? reportsRepo.findById(reportId) : undefined;
+      const config = applyModelOverride(
+        savedConfig,
+        report?.session_id === sessionId ? report.llm_model : undefined,
+      );
 
       const win = windowManager.getMainWindow();
       const onProgress = win
@@ -430,6 +437,15 @@ export function registerIpcHandlers(deps: {
     "settings:saveLLM",
     async (_event, config: LLMProviderConfig) => {
       saveLLMConfig(config);
+    },
+  );
+
+  ipcMain.handle(
+    "settings:listModels",
+    async (_event, config?: LLMProviderConfig) => {
+      const targetConfig = config ?? loadLLMConfig();
+      if (!targetConfig) throw new Error("LLM provider not configured");
+      return fetchLLMModels(targetConfig);
     },
   );
 

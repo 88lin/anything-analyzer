@@ -46,6 +46,8 @@ export default function LLMSection() {
   const [baseUrl, setBaseUrl] = useState(defaultUrls.openai)
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('')
+  const [modelOptions, setModelOptions] = useState<string[]>([])
+  const [isLoadingModels, setIsLoadingModels] = useState(false)
   const [maxTokens, setMaxTokens] = useState<number>(4096)
 
   const [maxContextTokens, setMaxContextTokens] = useState(200000)
@@ -89,10 +91,50 @@ export default function LLMSection() {
     const provider = value as LLMProviderType
     setName(provider)
     setBaseUrl(defaultUrls[provider])
+    setModelOptions([])
     if (provider === 'anthropic' || provider === 'minimax') {
       setApiType(undefined)
     } else if (!apiType) {
       setApiType('completions')
+    }
+  }
+
+  const buildConfig = (selectedModel: string): LLMProviderConfig => ({
+    name,
+    baseUrl,
+    apiKey,
+    model: selectedModel,
+    maxTokens,
+    ...(showApiType && apiType ? { apiType } : {}),
+    contextBudget: {
+      maxContextTokens,
+      compressionPeak: compressionPeak / 100,
+      compressionTarget: compressionTarget / 100,
+      contextMode,
+      compressionMode,
+      reserveCompletionTokens: 8192,
+      subagentEnabled,
+      subagentThreshold,
+      subagentChunkSize,
+      maxSubagents,
+    },
+  })
+
+  const handleLoadModels = async () => {
+    if (!baseUrl || !apiKey) {
+      toast.warning('请先填写 Base URL 和 API Key')
+      return
+    }
+    setIsLoadingModels(true)
+    try {
+      const models = await window.electronAPI.listLLMModels(buildConfig(model))
+      setModelOptions(models)
+      if (!model && models.length > 0) setModel(models[0])
+      toast.success(`已加载 ${models.length} 个模型`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsLoadingModels(false)
     }
   }
 
@@ -101,26 +143,7 @@ export default function LLMSection() {
       toast.warning('请填写必填项（Base URL、API Key、Model）')
       return
     }
-    const config: LLMProviderConfig = {
-      name,
-      baseUrl,
-      apiKey,
-      model,
-      maxTokens,
-      ...(showApiType && apiType ? { apiType } : {}),
-      contextBudget: {
-        maxContextTokens,
-        compressionPeak: compressionPeak / 100,
-        compressionTarget: compressionTarget / 100,
-        contextMode,
-        compressionMode,
-        reserveCompletionTokens: 8192,
-        subagentEnabled,
-        subagentThreshold,
-        subagentChunkSize,
-        maxSubagents,
-      },
-    }
+    const config = buildConfig(model)
     await window.electronAPI.saveLLMConfig(config)
     toast.success('LLM 配置已保存')
   }
@@ -175,11 +198,21 @@ export default function LLMSection() {
 
       <div style={fieldStyle}>
         <label style={labelStyle}>Model *</label>
-        <Input
-          value={model}
-          onChange={e => setModel(e.target.value)}
-          placeholder="gpt-4o / claude-sonnet-4-20250514 / MiniMax-M2.7 / ..."
-        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Input
+            value={model}
+            onChange={e => setModel(e.target.value)}
+            placeholder="gpt-4o / claude-sonnet-4-20250514 / MiniMax-M2.7 / ..."
+            list="llm-model-options"
+          />
+          <Button size="sm" loading={isLoadingModels} onClick={handleLoadModels}>
+            加载模型
+          </Button>
+        </div>
+        <datalist id="llm-model-options">
+          {modelOptions.map(option => <option key={option} value={option} />)}
+        </datalist>
+        <div style={helpStyle}>可从服务端加载模型列表，也可继续手动输入模型 ID。</div>
       </div>
 
       <div style={fieldStyle}>

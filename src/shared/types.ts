@@ -529,6 +529,7 @@ export const IPC_CHANNELS = {
   // Settings
   SETTINGS_GET_LLM: "settings:getLLM",
   SETTINGS_SAVE_LLM: "settings:saveLLM",
+  SETTINGS_LIST_MODELS: "settings:listModels",
 
   // Tabs
   TABS_CREATE: "tabs:create",
@@ -625,7 +626,7 @@ export interface ElectronAPI {
   getReports: (sessionId: string) => Promise<AnalysisReport[]>;
   clearCaptureData: (sessionId: string) => Promise<void>;
 
-  startAnalysis: (sessionId: string, purpose?: string, selectedSeqs?: number[]) => Promise<AnalysisReport>;
+  startAnalysis: (sessionId: string, purpose?: string, selectedSeqs?: number[], model?: string) => Promise<AnalysisReport>;
   cancelAnalysis: (sessionId: string) => Promise<void>;
   sendFollowUp: (sessionId: string, reportId: string, history: ChatMessage[], userMessage: string) => Promise<string>;
   getChatMessages: (reportId: string) => Promise<ChatMessage[]>;
@@ -639,6 +640,7 @@ export interface ElectronAPI {
 
   getLLMConfig: () => Promise<LLMProviderConfig | null>;
   saveLLMConfig: (config: LLMProviderConfig) => Promise<void>;
+  listLLMModels: (config?: LLMProviderConfig) => Promise<string[]>;
 
   // Tab management
   createTab: (url?: string) => Promise<BrowserTab>;

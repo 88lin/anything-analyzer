@@ -75,6 +75,8 @@ export const en = {
   'report.title': 'Protocol Analysis Report',
   'report.export': 'Export .md',
   'report.reanalyze': 'Re-analyze',
+  'report.analysisModel': 'Analysis model',
+  'report.refreshModels': 'Refresh model list',
   'report.stopAnalysis': 'Stop Analysis',
   'report.startAnalysis': 'Start AI Analysis',
   'report.noReport': 'No analysis report yet',

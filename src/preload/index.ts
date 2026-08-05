@@ -69,8 +69,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("data:clear", sessionId),
 
   // AI analysis
-  startAnalysis: (sessionId: string, purpose?: string, selectedSeqs?: number[]) =>
-    ipcRenderer.invoke("ai:analyze", sessionId, purpose, selectedSeqs),
+  startAnalysis: (sessionId: string, purpose?: string, selectedSeqs?: number[], model?: string) =>
+    ipcRenderer.invoke("ai:analyze", sessionId, purpose, selectedSeqs, model),
   cancelAnalysis: (sessionId: string) =>
     ipcRenderer.invoke("ai:cancel", sessionId),
   sendFollowUp: (sessionId: string, reportId: string, history: unknown[], userMessage: string) =>
@@ -92,6 +92,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getLLMConfig: () => ipcRenderer.invoke("settings:getLLM"),
   saveLLMConfig: (config: unknown) =>
     ipcRenderer.invoke("settings:saveLLM", config),
+  listLLMModels: (config?: unknown) =>
+    ipcRenderer.invoke("settings:listModels", config),
 
   // Auto update
   getAppVersion: () => ipcRenderer.invoke("app:version"),
