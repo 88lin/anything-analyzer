@@ -1,5 +1,6 @@
 import React from 'react'
 import { formatContextUsagePercent } from '@shared/token-estimate'
+import { useLocale } from '../i18n'
 import styles from './ContextUsageBar.module.css'
 
 export interface ContextUsageBarProps {
@@ -31,6 +32,7 @@ const ContextUsageBar: React.FC<ContextUsageBarProps> = ({
   usageRatio,
   compact = false,
 }) => {
+  const { t } = useLocale()
   const pct = Math.min(100, Math.max(0, absoluteRatio * 100))
   const pctLabel = formatContextUsagePercent(absoluteRatio)
   const level = tone(usageRatio, peakRatio)
@@ -38,9 +40,9 @@ const ContextUsageBar: React.FC<ContextUsageBarProps> = ({
   const peakPosition = Math.min(100, Math.max(0, usableTokens * peakRatio / maxContextTokens * 100))
 
   return (
-    <div className={`${styles.wrap} ${compact ? styles.compact : ''}`} title={`剩余 ${remainingTokens.toLocaleString()} · 可用上限 ${usableTokens.toLocaleString()} · 占用 ${formatContextUsagePercent(usageRatio)}`}>
+    <div className={`${styles.wrap} ${compact ? styles.compact : ''}`} title={`${t('contextBar.remaining')} ${remainingTokens.toLocaleString()} · ${t('contextBar.usableLimit')} ${usableTokens.toLocaleString()} · ${t('contextBar.occupancy')} ${formatContextUsagePercent(usageRatio)}`}>
       <div className={styles.meta}>
-        <span className={styles.label}>上下文</span>
+        <span className={styles.label}>{t('contextBar.title')}</span>
         <span className={styles.value}>
           {usedTokens.toLocaleString()} / {maxContextTokens.toLocaleString()}
           <span className={`${styles.pct} ${styles[level]}`}> {pctLabel}</span>
@@ -48,12 +50,12 @@ const ContextUsageBar: React.FC<ContextUsageBarProps> = ({
       </div>
       <div className={styles.track}>
         <div className={`${styles.fill} ${styles[level]}`} style={{ width: `${pct}%` }} />
-        <div className={styles.peakMark} style={{ left: `${peakPosition}%` }} title={`压缩峰值 ${peakPct}% of usable`} />
+        <div className={styles.peakMark} style={{ left: `${peakPosition}%` }} title={`${t('contextBar.peak')} ${peakPct}%`} />
       </div>
       {!compact && (
         <div className={styles.footer}>
-          <span>剩余 {remainingTokens.toLocaleString()}</span>
-          <span>峰值 {peakPct}%</span>
+          <span>{t('contextBar.remaining')} {remainingTokens.toLocaleString()}</span>
+          <span>{t('contextBar.peak')} {peakPct}%</span>
         </div>
       )}
     </div>

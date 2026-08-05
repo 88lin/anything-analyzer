@@ -82,19 +82,19 @@ const StatusBar: React.FC<StatusBarProps> = ({
       {/* Report view: LLM + Tokens */}
       {activeView === 'report' && llmModel && (
         <div className={styles.item}>
-          <span className={styles.label}>LLM</span>
+          <span className={styles.label}>{t('status.reportModel')}</span>
           <span className={styles.value}>{llmModel}</span>
         </div>
       )}
       {activeView === 'report' && tokenCount != null && tokenCount > 0 && (
         <div className={styles.item}>
-          <span className={styles.label}>Tokens</span>
+          <span className={styles.label}>{t('status.totalUsage')}</span>
           <span className={styles.value}>{tokenCount.toLocaleString()}</span>
         </div>
       )}
       {activeView === 'report' && contextUsageRatio != null && (
         <div className={styles.item}>
-          <span className={styles.label}>Context</span>
+          <span className={styles.label}>{t('status.context')}</span>
           <span
             className={styles.value}
             style={{ color: contextNearPeak || contextUsageRatio >= 0.85 ? 'var(--color-error)' : 'var(--text-secondary)' }}

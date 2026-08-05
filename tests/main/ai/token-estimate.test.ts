@@ -5,6 +5,7 @@ import {
   estimateMessagesTokensByContent,
   estimateTextTokens,
   estimateTextTokensRaw,
+  findLatestConversationTokenUsage,
   findLatestConversationPromptTokens,
   formatContextUsagePercent,
   getTokenEstimateCalibration,
@@ -76,12 +77,14 @@ describe("token-estimate", () => {
   });
 
   it("keeps context usage scoped to the current report conversation", () => {
-    const latest = findLatestConversationPromptTokens([
+    const latest = findLatestConversationTokenUsage([
       {
         id: 35,
         type: "analyze",
         report_id: null,
         created_at: 1_000,
+        provider: "openai",
+        model: "grok-4.5",
         prompt_tokens: 250_011,
         completion_tokens: 4_991,
         error: null,
@@ -91,6 +94,8 @@ describe("token-estimate", () => {
         type: "chat",
         report_id: "report-1",
         created_at: 2_000,
+        provider: "anthropic",
+        model: "claude-sonnet-4.5",
         prompt_tokens: 15_555,
         completion_tokens: 1_335,
         error: null,
@@ -100,6 +105,8 @@ describe("token-estimate", () => {
         type: "analyze",
         report_id: null,
         created_at: 4_000,
+        provider: "anthropic",
+        model: "claude-sonnet-4.5",
         prompt_tokens: 57_319,
         completion_tokens: 74,
         error: null,
@@ -109,16 +116,46 @@ describe("token-estimate", () => {
       created_at: 1_100,
     });
 
-    expect(latest).toBe(15_555);
+    expect(latest).toEqual({
+      logId: 40,
+      type: "chat",
+      provider: "anthropic",
+      model: "claude-sonnet-4.5",
+      promptTokens: 15_555,
+      completionTokens: 1_335,
+    });
   });
 
-  it("prefers actual prompt usage and never adds completion tokens", () => {
+  it("does not reuse report analysis usage before the first follow-up", () => {
+    const latest = findLatestConversationTokenUsage([
+      {
+        id: 35,
+        type: "analyze",
+        report_id: null,
+        created_at: 1_000,
+        provider: "openai",
+        model: "grok-4.5",
+        prompt_tokens: 250_011,
+        completion_tokens: 4_991,
+        error: null,
+      },
+    ], {
+      id: "report-1",
+      created_at: 1_100,
+    });
+
+    expect(latest).toBeNull();
+  });
+
+  it("counts latest input and output as the next request base context", () => {
     const used = resolveContextUsedTokens({
-      latestPromptTokens: 18_000,
-      reportPromptTokens: 12_000,
+      latestUsage: {
+        promptTokens: 15_555,
+        completionTokens: 1_335,
+      },
       fallbackMessages: [{ content: "x".repeat(100_000) }],
     });
 
-    expect(used).toBe(18_000);
+    expect(used).toBe(16_890);
   });
 });

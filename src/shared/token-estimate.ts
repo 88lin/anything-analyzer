@@ -86,6 +86,8 @@ interface PromptUsageLog {
   type: string;
   report_id?: string | null;
   created_at?: number;
+  provider?: string;
+  model?: string;
   prompt_tokens: number;
   completion_tokens?: number;
   error: string | null;
@@ -96,14 +98,19 @@ interface PromptUsageReportScope {
   created_at: number;
 }
 
-/**
- * 当前上下文取最后一次主分析/追问请求的真实输入 token。
- * filter/compress/subagent 和 completion token 都不代表当前对话上下文占用。
- */
-export function findLatestConversationPromptTokens(
+export interface ConversationTokenUsage {
+  logId: number;
+  type: string;
+  provider?: string;
+  model?: string;
+  promptTokens: number;
+  completionTokens: number;
+}
+
+export function findLatestConversationTokenUsage(
   logs: PromptUsageLog[],
   report?: PromptUsageReportScope | null,
-): number | null {
+): ConversationTokenUsage | null {
   const successful = logs.filter((log) =>
     (log.type === "analyze" || log.type === "chat")
     && !log.error
@@ -117,30 +124,43 @@ export function findLatestConversationPromptTokens(
     const latestChat = latestOf(successful.filter((log) =>
       log.type === "chat" && log.report_id === report.id,
     ));
-    if (latestChat) return latestChat.prompt_tokens;
-
-    const latestAnalyze = latestOf(successful.filter((log) =>
-      log.type === "analyze"
-      && log.created_at != null
-      && log.created_at <= report.created_at,
-    ));
-    return latestAnalyze?.prompt_tokens ?? null;
+    if (!latestChat) return null;
+    return {
+      logId: latestChat.id,
+      type: latestChat.type,
+      provider: latestChat.provider,
+      model: latestChat.model,
+      promptTokens: latestChat.prompt_tokens,
+      completionTokens: latestChat.completion_tokens ?? 0,
+    };
   }
 
   const latest = latestOf(successful);
-  return latest?.prompt_tokens ?? null;
+  if (!latest) return null;
+  return {
+    logId: latest.id,
+    type: latest.type,
+    provider: latest.provider,
+    model: latest.model,
+    promptTokens: latest.prompt_tokens,
+    completionTokens: latest.completion_tokens ?? 0,
+  };
+}
+
+export function findLatestConversationPromptTokens(
+  logs: PromptUsageLog[],
+  report?: PromptUsageReportScope | null,
+): number | null {
+  return findLatestConversationTokenUsage(logs, report)?.promptTokens ?? null;
 }
 
 export function resolveContextUsedTokens(input: {
-  latestPromptTokens?: number | null;
-  reportPromptTokens?: number | null;
+  latestUsage?: Pick<ConversationTokenUsage, "promptTokens" | "completionTokens"> | null;
   fallbackMessages: Array<{ content: string }>;
 }): number {
-  if (input.latestPromptTokens != null && input.latestPromptTokens > 0) {
-    return input.latestPromptTokens;
-  }
-  if (input.reportPromptTokens != null && input.reportPromptTokens > 0) {
-    return input.reportPromptTokens;
+  // 上次请求输入已包含此前历史；加上本次输出，即下一次请求前的基础上下文。
+  if (input.latestUsage && input.latestUsage.promptTokens > 0) {
+    return input.latestUsage.promptTokens + Math.max(0, input.latestUsage.completionTokens);
   }
   return estimateMessagesTokensByContent(input.fallbackMessages);
 }

@@ -67,6 +67,9 @@ export const en = {
   'status.session': 'Session',
   'status.requests': 'Requests',
   'status.hooks': 'Hooks',
+  'status.reportModel': 'Report LLM',
+  'status.totalUsage': 'Cumulative Tokens',
+  'status.context': 'Next Context',
 
   // Report
   'report.title': 'Protocol Analysis Report',
@@ -85,10 +88,19 @@ export const en = {
   'report.explainCrypto': 'Explain encryption/signing flow',
   'report.securityRisks': 'Analyze potential security risks',
   'report.listApiParams': 'List all API params and response structures',
+  'report.reportUsage': 'Report generation',
+  'report.cumulativeUsage': 'Cumulative API usage',
+  'report.currentContext': 'Next request base context',
+  'report.followUpRequest': 'Follow-up request',
+  'report.localEstimate': 'Local estimate (no follow-up yet)',
+  'report.tokenBreakdown': 'Input {prompt} + output {completion}',
 
   // Context usage
-  'contextBar.title': 'Context usage',
+  'contextBar.title': 'Next request context',
   'contextBar.available': 'Available',
+  'contextBar.remaining': 'Remaining',
+  'contextBar.usableLimit': 'Usable limit',
+  'contextBar.occupancy': 'Usage',
   'contextBar.peak': 'Peak',
 
   // Settings

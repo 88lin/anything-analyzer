@@ -12,6 +12,7 @@ import ContextUsageBar from './ContextUsageBar'
 import {
   buildContextUsageSnapshot,
   resolveContextUsedTokens,
+  type ConversationTokenUsage,
   type ContextUsageSnapshot,
 } from '@shared/token-estimate'
 import styles from './ReportView.module.css'
@@ -33,6 +34,7 @@ interface ReportViewProps {
   hooks?: JsHookRecord[]
   /** 外部传入的上下文占用快照；缺省时组件内估算 */
   contextUsage?: ContextUsageSnapshot | null
+  contextSource?: ConversationTokenUsage | null
 }
 
 function formatTokens(tokens: number | null): string {
@@ -132,6 +134,7 @@ const ReportView: React.FC<ReportViewProps> = ({
   requests = [],
   hooks = [],
   contextUsage: contextUsageProp = null,
+  contextSource = null,
 }) => {
   const { t } = useLocale()
   const [chatInput, setChatInput] = useState('')
@@ -164,7 +167,6 @@ const ReportView: React.FC<ReportViewProps> = ({
       messages.push({ content: report.report_content })
     }
     const used = resolveContextUsedTokens({
-      reportPromptTokens: report?.prompt_tokens,
       fallbackMessages: messages,
     })
     return buildContextUsageSnapshot(used, budgetCfg)
@@ -266,18 +268,30 @@ const ReportView: React.FC<ReportViewProps> = ({
       {/* Report metadata if available */}
       {report && (
         <div className={styles.contextSection}>
-          <div className={styles.contextLabel}>LLM</div>
+          <div className={styles.contextLabel}>{t('report.reportUsage')}</div>
           <div className={styles.contextItem}>
             <div className={styles.contextDot} style={{ background: 'var(--color-info)' }} />
             {report.llm_model}
           </div>
           {report.prompt_tokens != null && report.completion_tokens != null && (
-            <div className={styles.contextItem}>
+            <div
+              className={styles.contextItem}
+              title={t('report.tokenBreakdown', {
+                prompt: report.prompt_tokens.toLocaleString(),
+                completion: report.completion_tokens.toLocaleString(),
+              })}
+            >
               <div className={styles.contextDot} style={{ background: 'var(--color-success)' }} />
-              {formatTokens(report.prompt_tokens + report.completion_tokens)} tokens
+              {t('report.cumulativeUsage')} {formatTokens(report.prompt_tokens + report.completion_tokens)} tokens
             </div>
           )}
-          <div style={{ marginTop: 10 }}>
+          <div className={styles.contextLabel} style={{ marginTop: 14 }}>{t('report.currentContext')}</div>
+          <div className={styles.contextItem}>
+            <div className={styles.contextDot} style={{ background: 'var(--color-warning)' }} />
+            {contextSource?.model ?? contextSource?.provider ?? t('report.localEstimate')}
+            {contextSource && ` · ${t('report.followUpRequest')}`}
+          </div>
+          <div style={{ marginTop: 8 }}>
             <ContextUsageBar
               usedTokens={usage.usedTokens}
               maxContextTokens={usage.maxContextTokens}

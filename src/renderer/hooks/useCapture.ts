@@ -8,7 +8,10 @@ import type {
   InteractionEvent,
 } from "@shared/types";
 import { IPC_CHANNELS } from "@shared/types";
-import { findLatestConversationPromptTokens } from "@shared/token-estimate";
+import {
+  findLatestConversationTokenUsage,
+  type ConversationTokenUsage,
+} from "@shared/token-estimate";
 
 interface UseCaptureState {
   requests: CapturedRequest[];
@@ -21,7 +24,7 @@ interface UseCaptureState {
   streamingContent: string;
   selectedRequest: CapturedRequest | null;
   chatHistory: ChatMessage[];
-  latestContextTokens: number | null;
+  latestContextUsage: ConversationTokenUsage | null;
   isChatting: boolean;
   chatError: string | null;
 }
@@ -47,7 +50,7 @@ const INITIAL_STATE: UseCaptureState = {
   streamingContent: "",
   selectedRequest: null,
   chatHistory: [],
-  latestContextTokens: null,
+  latestContextUsage: null,
   isChatting: false,
   chatError: null,
 };
@@ -90,7 +93,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
       ]);
       const sortedReports = [...reports].sort((a, b) => b.created_at - a.created_at);
       const latestReport = sortedReports[0] ?? null;
-      const latestContextTokens = findLatestConversationPromptTokens(aiRequestLogs, latestReport);
+      const latestContextUsage = findLatestConversationTokenUsage(aiRequestLogs, latestReport);
 
       // Restore chat history for the latest report
       let chatHistory: ChatMessage[] = [];
@@ -140,7 +143,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
           reports: sortedReports,
           interactions: (interactions || []).sort((a, b) => a.sequence - b.sequence),
           chatHistory,
-          latestContextTokens,
+          latestContextUsage,
         }));
       }
     } catch (err) {
@@ -159,9 +162,6 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
 
     try {
       const report = await window.electronAPI.startAnalysis(sid, purpose, selectedSeqs);
-      const latestContextTokens = await window.electronAPI.getAiRequestLogs(sid)
-        .then((logs) => findLatestConversationPromptTokens(logs, report))
-        .catch(() => null);
 
       // Only update if session hasn't changed
       if (sessionIdRef.current === sid) {
@@ -200,7 +200,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
             streamingContent: "",
             reports: [report, ...prev.reports],
             chatHistory,
-            latestContextTokens: latestContextTokens ?? prev.latestContextTokens,
+            latestContextUsage: null,
             chatError: null,
           }
         });
@@ -265,8 +265,8 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
 
     try {
       const reply = await window.electronAPI.sendFollowUp(sid, currentReportId, chatHistoryRef.current, message);
-      const latestContextTokens = await window.electronAPI.getAiRequestLogs(sid)
-        .then((logs) => findLatestConversationPromptTokens(logs, currentReportScope))
+      const latestContextUsage = await window.electronAPI.getAiRequestLogs(sid)
+        .then((logs) => findLatestConversationTokenUsage(logs, currentReportScope))
         .catch(() => null);
 
       if (sessionIdRef.current === sid) {
@@ -275,7 +275,7 @@ export function useCapture(sessionId: string | null): UseCaptureReturn {
           isChatting: false,
           streamingContent: "",
           chatHistory: [...prev.chatHistory, { role: 'assistant' as const, content: reply }],
-          latestContextTokens: latestContextTokens ?? prev.latestContextTokens,
+          latestContextUsage: latestContextUsage ?? prev.latestContextUsage,
         }));
       }
     } catch (err) {

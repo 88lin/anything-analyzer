@@ -122,7 +122,7 @@ function App(): React.ReactElement {
   /** Ref to browser placeholder for reporting exact bounds to main process */
   const placeholderRef = useRef<HTMLDivElement>(null)
 
-  const { requests, hooks, snapshots, reports, interactions, isAnalyzing, analysisError, streamingContent, startAnalysis, cancelAnalysis, chatHistory, latestContextTokens, isChatting, chatError, sendFollowUp, clearCaptureData } = useCapture(currentSessionId)
+  const { requests, hooks, snapshots, reports, interactions, isAnalyzing, analysisError, streamingContent, startAnalysis, cancelAnalysis, chatHistory, latestContextUsage, isChatting, chatError, sendFollowUp, clearCaptureData } = useCapture(currentSessionId)
 
   const [budgetCfg, setBudgetCfg] = useState({
     maxContextTokens: 200_000,
@@ -150,12 +150,11 @@ function App(): React.ReactElement {
       messages.push({ content: reports[0].report_content })
     }
     const used = resolveContextUsedTokens({
-      latestPromptTokens: latestContextTokens,
-      reportPromptTokens: reports[0]?.prompt_tokens,
+      latestUsage: latestContextUsage,
       fallbackMessages: messages,
     })
     return buildContextUsageSnapshot(used, budgetCfg)
-  }, [chatHistory, latestContextTokens, reports, budgetCfg])
+  }, [chatHistory, latestContextUsage, reports, budgetCfg])
 
 
   const selectedRequest = requests.find(r => r.id === selectedRequestId) || null
@@ -618,6 +617,7 @@ function App(): React.ReactElement {
           requests={requests}
           hooks={hooks}
           contextUsage={contextUsage}
+          contextSource={latestContextUsage}
         />
       ) : (
         renderEmptyGuide()

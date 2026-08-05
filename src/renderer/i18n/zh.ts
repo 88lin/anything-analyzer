@@ -67,6 +67,9 @@ export const zh = {
   'status.session': '会话',
   'status.requests': '请求',
   'status.hooks': 'Hooks',
+  'status.reportModel': '报告模型',
+  'status.totalUsage': '累计 Tokens',
+  'status.context': '下次上下文',
 
   // Report
   'report.title': '协议分析报告',
@@ -85,10 +88,19 @@ export const zh = {
   'report.explainCrypto': '详解加密/签名流程',
   'report.securityRisks': '分析潜在安全风险',
   'report.listApiParams': '列出所有 API 参数和响应结构',
+  'report.reportUsage': '报告生成',
+  'report.cumulativeUsage': '累计 API 消耗',
+  'report.currentContext': '下次请求基础上下文',
+  'report.followUpRequest': '追问请求',
+  'report.localEstimate': '本地估算（尚未追问）',
+  'report.tokenBreakdown': '输入 {prompt} + 输出 {completion}',
 
   // Context usage
-  'contextBar.title': '上下文占用',
+  'contextBar.title': '下次请求上下文',
   'contextBar.available': '可用',
+  'contextBar.remaining': '剩余',
+  'contextBar.usableLimit': '可用上限',
+  'contextBar.occupancy': '占用',
   'contextBar.peak': '峰值',
 
   // Settings
