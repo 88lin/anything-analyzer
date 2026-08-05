@@ -69,7 +69,7 @@ export const zh = {
   'status.hooks': 'Hooks',
   'status.reportModel': '报告模型',
   'status.totalUsage': '累计 Tokens',
-  'status.context': '下次上下文',
+  'status.context': '上下文用量',
 
   // Report
   'report.title': '协议分析报告',
@@ -92,18 +92,20 @@ export const zh = {
   'report.listApiParams': '列出所有 API 参数和响应结构',
   'report.reportUsage': '报告生成',
   'report.cumulativeUsage': '累计 API 消耗',
-  'report.currentContext': '下次请求基础上下文',
-  'report.followUpRequest': '追问请求',
-  'report.localEstimate': '本地估算（尚未追问）',
+  'report.currentContext': '追问上下文',
+  'report.followUpRequest': '最近追问实测',
+  'report.localEstimate': '根据当前报告估算',
   'report.tokenBreakdown': '输入 {prompt} + 输出 {completion}',
 
   // Context usage
-  'contextBar.title': '下次请求上下文',
+  'contextBar.title': '上下文用量',
   'contextBar.available': '可用',
-  'contextBar.remaining': '剩余',
-  'contextBar.usableLimit': '可用上限',
-  'contextBar.occupancy': '占用',
-  'contextBar.peak': '峰值',
+  'contextBar.remaining': '可用',
+  'contextBar.usableLimit': '可用容量',
+  'contextBar.occupancy': '已用',
+  'contextBar.autoCompress': '达到 {percent}% 自动压缩',
+  'contextBar.modelLimit': '模型上限',
+  'contextBar.reservedOutput': '预留输出',
 
   // Settings
   'settings.title': '设置',

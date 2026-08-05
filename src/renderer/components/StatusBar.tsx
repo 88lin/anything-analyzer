@@ -14,7 +14,7 @@ interface StatusBarProps {
   activeView?: AppView
   llmModel?: string
   tokenCount?: number
-  /** used/max 0..1+ */
+  /** used/usable 0..1+ */
   contextUsageRatio?: number
   contextNearPeak?: boolean
 }

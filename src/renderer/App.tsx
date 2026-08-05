@@ -733,7 +733,7 @@ function App(): React.ReactElement {
         activeView={activeView}
         llmModel={reports[0]?.llm_model}
         tokenCount={reports[0] ? (reports[0].prompt_tokens ?? 0) + (reports[0].completion_tokens ?? 0) : undefined}
-        contextUsageRatio={activeView === 'report' ? contextUsage.absoluteRatio : undefined}
+        contextUsageRatio={activeView === 'report' ? contextUsage.usageRatio : undefined}
         contextNearPeak={activeView === 'report' ? contextUsage.nearPeak || contextUsage.overPeak : undefined}
       />
 

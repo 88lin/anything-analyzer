@@ -312,8 +312,8 @@ const ReportView: React.FC<ReportViewProps> = ({
               maxContextTokens={usage.maxContextTokens}
               usableTokens={usage.usableTokens}
               remainingTokens={usage.remainingTokens}
+              reserveCompletionTokens={usage.reserveCompletionTokens}
               peakRatio={usage.peakRatio}
-              absoluteRatio={usage.absoluteRatio}
               usageRatio={usage.usageRatio}
             />
           </div>
@@ -488,8 +488,8 @@ const ReportView: React.FC<ReportViewProps> = ({
             maxContextTokens={usage.maxContextTokens}
             usableTokens={usage.usableTokens}
             remainingTokens={usage.remainingTokens}
+            reserveCompletionTokens={usage.reserveCompletionTokens}
             peakRatio={usage.peakRatio}
-            absoluteRatio={usage.absoluteRatio}
             usageRatio={usage.usageRatio}
             compact
           />

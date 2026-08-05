@@ -69,7 +69,7 @@ export const en = {
   'status.hooks': 'Hooks',
   'status.reportModel': 'Report LLM',
   'status.totalUsage': 'Cumulative Tokens',
-  'status.context': 'Next Context',
+  'status.context': 'Context usage',
 
   // Report
   'report.title': 'Protocol Analysis Report',
@@ -92,18 +92,20 @@ export const en = {
   'report.listApiParams': 'List all API params and response structures',
   'report.reportUsage': 'Report generation',
   'report.cumulativeUsage': 'Cumulative API usage',
-  'report.currentContext': 'Next request base context',
-  'report.followUpRequest': 'Follow-up request',
-  'report.localEstimate': 'Local estimate (no follow-up yet)',
+  'report.currentContext': 'Follow-up context',
+  'report.followUpRequest': 'Measured from latest follow-up',
+  'report.localEstimate': 'Estimated from current report',
   'report.tokenBreakdown': 'Input {prompt} + output {completion}',
 
   // Context usage
-  'contextBar.title': 'Next request context',
+  'contextBar.title': 'Context usage',
   'contextBar.available': 'Available',
-  'contextBar.remaining': 'Remaining',
-  'contextBar.usableLimit': 'Usable limit',
-  'contextBar.occupancy': 'Usage',
-  'contextBar.peak': 'Peak',
+  'contextBar.remaining': 'Available',
+  'contextBar.usableLimit': 'Usable capacity',
+  'contextBar.occupancy': 'Used',
+  'contextBar.autoCompress': 'Auto-compresses at {percent}%',
+  'contextBar.modelLimit': 'Model limit',
+  'contextBar.reservedOutput': 'Reserved output',
 
   // Settings
   'settings.title': 'Settings',
