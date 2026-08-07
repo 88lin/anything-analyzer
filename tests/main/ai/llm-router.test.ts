@@ -1112,6 +1112,112 @@ describe("LLMRouter", () => {
   });
 
   describe("completeWithTools - Anthropic", () => {
+    it("should cap oversized tool results before the next Claude request", async () => {
+      const config: LLMProviderConfig = {
+        name: "anthropic",
+        baseUrl: "https://api.anthropic.com/v1",
+        apiKey: "test-anthropic-key",
+        model: "claude-sonnet-4.5",
+        maxTokens: 1_000,
+        contextBudget: {
+          maxContextTokens: 10_000,
+          reserveCompletionTokens: 1_000,
+          compressionPeak: 0.85,
+          compressionTarget: 0.55,
+        },
+      };
+      fetchSpy.mockResolvedValueOnce(
+        createJSONResponse({
+          content: [{ type: "tool_use", id: "call-1", name: "lookup", input: {} }],
+        }),
+      ).mockResolvedValueOnce(
+        createJSONResponse({
+          content: [{ type: "text", text: "done" }],
+        }),
+      );
+
+      const router = new LLMRouter(config);
+      const result = await router.completeWithTools(
+        [{ role: "user", content: "hello" }],
+        [{ name: "lookup", description: "Lookup", inputSchema: { type: "object" } }],
+        async () => "超大工具结果".repeat(20_000),
+      );
+
+      const [, secondOptions] = fetchSpy.mock.calls[1];
+      const secondBody = JSON.parse(secondOptions.body);
+      const toolResult = secondBody.messages
+        .flatMap((message: { content: unknown }) => Array.isArray(message.content) ? message.content : [])
+        .find((block: { type?: string }) => block.type === "tool_result").content as string;
+      expect(toolResult.length).toBeLessThan(20_000 * "超大工具结果".length);
+      expect(toolResult).toContain("tool result truncated");
+      expect(result.content).toBe("done");
+    });
+
+    it("should force a final Claude response after reaching max tool rounds", async () => {
+      const config: LLMProviderConfig = {
+        name: "anthropic",
+        baseUrl: "https://api.anthropic.com/v1",
+        apiKey: "test-anthropic-key",
+        model: "claude-sonnet-4.5",
+        maxTokens: 4096,
+      };
+      fetchSpy.mockResolvedValueOnce(
+        createJSONResponse({
+          content: [{ type: "tool_use", id: "call-1", name: "lookup", input: {} }],
+        }),
+      ).mockResolvedValueOnce(
+        createJSONResponse({
+          content: [{ type: "text", text: "done" }],
+        }),
+      );
+
+      const router = new LLMRouter(config);
+      const result = await router.completeWithTools(
+        [{ role: "user", content: "hello" }],
+        [{ name: "lookup", description: "Lookup", inputSchema: { type: "object" } }],
+        async () => "tool result",
+        undefined,
+        1,
+      );
+
+      const [, secondOptions] = fetchSpy.mock.calls[1];
+      const secondBody = JSON.parse(secondOptions.body);
+      expect(secondBody.tools).toBeUndefined();
+      expect(result.content).toBe("done");
+    });
+
+    it("should allow Claude tool workflows to exceed ten rounds by default", async () => {
+      const config: LLMProviderConfig = {
+        name: "anthropic",
+        baseUrl: "https://api.anthropic.com/v1",
+        apiKey: "test-anthropic-key",
+        model: "claude-sonnet-4.5",
+        maxTokens: 4096,
+      };
+      for (let round = 1; round <= 12; round += 1) {
+        fetchSpy.mockResolvedValueOnce(
+          createJSONResponse({
+            content: [{ type: "tool_use", id: `call-${round}`, name: "lookup", input: { round } }],
+          }),
+        );
+      }
+      fetchSpy.mockResolvedValueOnce(
+        createJSONResponse({
+          content: [{ type: "text", text: "done" }],
+        }),
+      );
+
+      const router = new LLMRouter(config);
+      const result = await router.completeWithTools(
+        [{ role: "user", content: "hello" }],
+        [{ name: "lookup", description: "Lookup", inputSchema: { type: "object" } }],
+        async () => "small tool result",
+      );
+
+      expect(fetchSpy).toHaveBeenCalledTimes(13);
+      expect(result.content).toBe("done");
+    });
+
     it("should accumulate cached input across tool rounds", async () => {
       const config: LLMProviderConfig = {
         name: "anthropic",

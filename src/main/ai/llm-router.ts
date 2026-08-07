@@ -1,5 +1,12 @@
 import type { LLMProviderConfig, AiRequestLogData } from "@shared/types";
 import type { MCPToolInfo } from "../mcp/mcp-manager";
+import {
+  compactMessagesToBudget,
+  estimateTokens,
+  getCompressionTargetTokens,
+  getCompressionTriggerTokens,
+  normalizeContextBudget,
+} from "./context-budget";
 
 interface LLMResponse {
   content: string;
@@ -70,6 +77,10 @@ interface AnthropicUsage {
 }
 
 const DEFAULT_TIMEOUT = 600000; // 10 minutes — LLM relay servers can be slow; user can cancel manually
+const DEFAULT_MAX_TOOL_ROUNDS = 64;
+const TOOL_RESULT_BUDGET_RATIO = 0.75;
+const TOOL_RESULT_TRUNCATION_MARKER = "\n...[tool result truncated to stay within context budget]";
+const TOOL_RESULT_OMITTED = "[tool result omitted: context budget exhausted; query a narrower range]";
 
 interface ResponsesOutputItem {
   type: string;
@@ -112,6 +123,57 @@ function requireLLMContent(content: string, fieldName: string): string {
     throw new Error(`LLM 响应格式异常: 缺少 ${fieldName} 字段`);
   }
   return content;
+}
+
+function truncateTextToTokenBudget(content: string, maxTokens: number): string {
+  if (maxTokens <= 0) return TOOL_RESULT_OMITTED;
+  if (estimateTokens(content) <= maxTokens) return content;
+
+  const markerTokens = estimateTokens(TOOL_RESULT_TRUNCATION_MARKER);
+  if (maxTokens <= markerTokens) return TOOL_RESULT_OMITTED;
+
+  let low = 0;
+  let high = content.length;
+  let best = TOOL_RESULT_OMITTED;
+  while (low <= high) {
+    const keepChars = Math.floor((low + high) / 2);
+    const headChars = Math.ceil(keepChars * 0.7);
+    const tailChars = Math.max(0, keepChars - headChars);
+    const candidate = `${content.slice(0, headChars)}${TOOL_RESULT_TRUNCATION_MARKER}${tailChars > 0 ? content.slice(-tailChars) : ""}`;
+    if (estimateTokens(candidate) <= maxTokens) {
+      best = candidate;
+      low = keepChars + 1;
+    } else {
+      high = keepChars - 1;
+    }
+  }
+  return best;
+}
+
+function createToolResultLimiter(config: LLMProviderConfig): (results: string[]) => string[] {
+  const budget = normalizeContextBudget(config.contextBudget);
+  const toolResultTokens = Math.max(
+    512,
+    Math.floor(
+      (getCompressionTriggerTokens(budget) - getCompressionTargetTokens(budget))
+      * TOOL_RESULT_BUDGET_RATIO,
+    ),
+  );
+  let remainingTokens = toolResultTokens;
+
+  return (results: string[]): string[] => results.map((result, index) => {
+    if (remainingTokens <= 0) return TOOL_RESULT_OMITTED;
+    const remainingResults = results.length - index;
+    const resultBudget = Math.max(1, Math.floor(remainingTokens / remainingResults));
+    const limited = truncateTextToTokenBudget(result, resultBudget);
+    remainingTokens = Math.max(0, remainingTokens - estimateTokens(limited));
+    return limited;
+  });
+}
+
+function normalizeMaxToolRounds(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_MAX_TOOL_ROUNDS;
+  return Math.max(1, Math.floor(value));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -313,16 +375,22 @@ export class LLMRouter {
     tools: MCPToolInfo[],
     callTool: (name: string, args: Record<string, unknown>) => Promise<string>,
     onChunk?: (chunk: string) => void,
-    _maxRounds = 10,
+    maxRounds = DEFAULT_MAX_TOOL_ROUNDS,
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
+    const budget = normalizeContextBudget(this.config.contextBudget);
+    const toolLoopMessages = compactMessagesToBudget(messages, {
+      ...budget,
+      compressionPeak: Math.max(0.5, Math.min(budget.compressionPeak, budget.compressionTarget)),
+    }).messages;
+    const normalizedMaxRounds = normalizeMaxToolRounds(maxRounds);
     if (this.config.name === "anthropic" || this.config.name === "minimax") {
-      return this.agenticLoopAnthropic(messages, tools, callTool, onChunk, _maxRounds, signal);
+      return this.agenticLoopAnthropic(toolLoopMessages, tools, callTool, onChunk, normalizedMaxRounds, signal);
     }
     if (this.config.apiType === "responses") {
-      return this.agenticLoopResponses(messages, tools, callTool, onChunk, _maxRounds, signal);
+      return this.agenticLoopResponses(toolLoopMessages, tools, callTool, onChunk, normalizedMaxRounds, signal);
     }
-    return this.agenticLoopOpenAI(messages, tools, callTool, onChunk, _maxRounds, signal);
+    return this.agenticLoopOpenAI(toolLoopMessages, tools, callTool, onChunk, normalizedMaxRounds, signal);
   }
 
   // ---- Agentic Loop: OpenAI / Custom ----
@@ -332,7 +400,7 @@ export class LLMRouter {
     tools: MCPToolInfo[],
     callTool: (name: string, args: Record<string, unknown>) => Promise<string>,
     onChunk?: (chunk: string) => void,
-    _maxRounds = 10,
+    maxRounds = DEFAULT_MAX_TOOL_ROUNDS,
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
     const bindings = createToolBindings(tools);
@@ -350,8 +418,11 @@ export class LLMRouter {
     }));
 
     const history = [...messages];
+    const limitToolResults = createToolResultLimiter(this.config);
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
+    let toolRounds = 0;
+    let forceFinal = false;
 
     for (;;) {
       const url = `${this.config.baseUrl.replace(/\/$/, "")}/chat/completions`;
@@ -365,9 +436,9 @@ export class LLMRouter {
           return msg;
         }),
         max_tokens: this.config.maxTokens,
-        tools: openaiTools,
         stream: false,
       };
+      if (!forceFinal) body.tools = openaiTools;
 
       signal?.throwIfAborted();
       const response = await this.fetchWithRetry(url, {
@@ -414,6 +485,7 @@ export class LLMRouter {
 
       // Has tool calls → execute and continue loop
       if (assistantMsg.tool_calls && assistantMsg.tool_calls.length > 0) {
+        if (forceFinal) throw new Error("LLM 在工具轮次达到上限后仍请求调用工具");
         for (const tc of assistantMsg.tool_calls) {
           if (typeof tc.id !== "string" || tc.id.length === 0) throw new Error("tool_call missing id");
           if (typeof tc.function?.name !== "string" || tc.function.name.length === 0) throw new Error("tool_call missing name");
@@ -432,6 +504,7 @@ export class LLMRouter {
           onChunk(`\n\n> 🔧 调用工具: ${toolNames}\n\n`);
         }
 
+        const rawResults: string[] = [];
         for (const tc of assistantMsg.tool_calls) {
           const args = readToolArguments(tc.function.arguments, "tool_call");
           let result: string;
@@ -440,13 +513,20 @@ export class LLMRouter {
           } catch (err) {
             result = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }
+          rawResults.push(result);
+        }
+        const limitedResults = limitToolResults(rawResults);
+        for (let index = 0; index < assistantMsg.tool_calls.length; index += 1) {
+          const tc = assistantMsg.tool_calls[index];
           history.push({
             role: "tool",
-            content: result,
+            content: limitedResults[index],
             tool_call_id: tc.id,
             name: tc.function.name,
           });
         }
+        toolRounds += 1;
+        forceFinal = toolRounds >= maxRounds;
         continue;
       }
 
@@ -472,7 +552,7 @@ export class LLMRouter {
     tools: MCPToolInfo[],
     callTool: (name: string, args: Record<string, unknown>) => Promise<string>,
     onChunk?: (chunk: string) => void,
-    _maxRounds = 10,
+    maxRounds = DEFAULT_MAX_TOOL_ROUNDS,
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
     const bindings = createToolBindings(tools);
@@ -491,8 +571,11 @@ export class LLMRouter {
       .filter((m) => m.role !== "system")
       .map((m) => ({ role: m.role, content: m.content }));
 
+    const limitToolResults = createToolResultLimiter(this.config);
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
+    let toolRounds = 0;
+    let forceFinal = false;
 
     for (;;) {
       const url = `${this.config.baseUrl.replace(/\/$/, "")}/messages`;
@@ -500,9 +583,9 @@ export class LLMRouter {
         model: this.config.model,
         max_tokens: this.config.maxTokens,
         messages: history,
-        tools: anthropicTools,
         stream: false,
       };
+      if (!forceFinal) body.tools = anthropicTools;
       if (systemMsg) body.system = systemMsg.content;
 
       signal?.throwIfAborted();
@@ -537,6 +620,7 @@ export class LLMRouter {
       );
 
       if (toolUseBlocks.length > 0) {
+        if (forceFinal) throw new Error("LLM 在工具轮次达到上限后仍请求调用工具");
         for (const block of toolUseBlocks) {
           if (typeof block.id !== "string" || block.id.length === 0) throw new Error("tool_use missing id");
           if (typeof block.name !== "string" || block.name.length === 0) throw new Error("tool_use missing name");
@@ -552,7 +636,7 @@ export class LLMRouter {
         }
 
         // Execute tools and push results
-        const toolResults: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
+        const rawResults: string[] = [];
         for (const block of toolUseBlocks) {
           let result: string;
           try {
@@ -560,13 +644,21 @@ export class LLMRouter {
           } catch (err) {
             result = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }
+          rawResults.push(result);
+        }
+        const limitedResults = limitToolResults(rawResults);
+        const toolResults: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
+        for (let index = 0; index < toolUseBlocks.length; index += 1) {
+          const block = toolUseBlocks[index];
           toolResults.push({
             type: "tool_result",
             tool_use_id: block.id,
-            content: result,
+            content: limitedResults[index],
           });
         }
         history.push({ role: "user", content: toolResults });
+        toolRounds += 1;
+        forceFinal = toolRounds >= maxRounds;
         continue;
       }
 
@@ -589,7 +681,7 @@ export class LLMRouter {
     tools: MCPToolInfo[],
     callTool: (name: string, args: Record<string, unknown>) => Promise<string>,
     onChunk?: (chunk: string) => void,
-    _maxRounds = 10,
+    maxRounds = DEFAULT_MAX_TOOL_ROUNDS,
     signal?: AbortSignal,
   ): Promise<LLMResponse> {
     const bindings = createToolBindings(tools);
@@ -609,8 +701,11 @@ export class LLMRouter {
       .filter((m) => m.role !== "system")
       .map((m) => ({ role: m.role, content: m.content }));
 
+    const limitToolResults = createToolResultLimiter(this.config);
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
+    let toolRounds = 0;
+    let forceFinal = false;
 
     for (;;) {
       const url = `${this.config.baseUrl.replace(/\/$/, "")}/responses`;
@@ -618,9 +713,9 @@ export class LLMRouter {
         model: this.config.model,
         input,
         max_output_tokens: this.config.maxTokens,
-        tools: responsesTools,
         stream: false,
       };
+      if (!forceFinal) body.tools = responsesTools;
       if (systemMsg) body.instructions = systemMsg.content;
 
       signal?.throwIfAborted();
@@ -666,6 +761,7 @@ export class LLMRouter {
       const functionCalls = data.output.filter((item) => item.type === "function_call");
 
       if (functionCalls.length > 0) {
+        if (forceFinal) throw new Error("LLM 在工具轮次达到上限后仍请求调用工具");
         for (const fc of functionCalls) {
           if (typeof fc.call_id !== "string" || fc.call_id.length === 0) throw new Error("function_call missing call_id");
           if (typeof fc.name !== "string" || fc.name.length === 0) throw new Error("function_call missing name");
@@ -686,6 +782,7 @@ export class LLMRouter {
           onChunk(`\n\n> 🔧 调用工具: ${toolNames}\n\n`);
         }
 
+        const rawResults: string[] = [];
         for (const fc of validatedFunctionCalls) {
           let result: string;
           const args = readToolArguments(fc.arguments, "function_call");
@@ -694,12 +791,19 @@ export class LLMRouter {
           } catch (err) {
             result = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }
+          rawResults.push(result);
+        }
+        const limitedResults = limitToolResults(rawResults);
+        for (let index = 0; index < validatedFunctionCalls.length; index += 1) {
+          const fc = validatedFunctionCalls[index];
           input.push({
             type: "function_call_output",
             call_id: fc.call_id,
-            output: result,
+            output: limitedResults[index],
           });
         }
+        toolRounds += 1;
+        forceFinal = toolRounds >= maxRounds;
         continue;
       }
 
