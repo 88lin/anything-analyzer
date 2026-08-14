@@ -1,6 +1,9 @@
-# Anything Analyzer v3.6.60
+# Anything Analyzer v3.6.61
 
 ## 修复
+
+- **Windows 抓包控制按钮失效** — 修复原生 `WebContentsView` 在会话创建后未重新同步实际占位区域的问题。旧版可能保留过大的原生浏览器边界，覆盖 React 工具栏并吞掉鼠标事件，导致“开始抓包 / 暂停 / 停止”无反应。现在会在会话或视图切换时重新测量并同步边界，并在主进程中限制边界不越过窗口内容区。
+- **控制按钮可点击性回归保护** — 新增原生浏览器边界钳制测试，防止越界的原生视图再次覆盖界面控件。
 
 - **Claude 工具上下文溢出** — 工具调用结果现在按上下文 token 预算统一限长，避免详情、Interactions 或第三方 MCP 返回大段数据后撑满模型窗口。
 - **工具链上下文预留** — 进入工具循环前主动压缩初始消息，为后续工具结果和模型输出保留稳定空间。
@@ -19,7 +22,7 @@
 
 | 平台 | 文件 |
 |------|------|
-| Windows | Anything-Analyzer-Setup-3.6.60.exe |
-| macOS (Apple Silicon) | Anything-Analyzer-3.6.60-arm64.dmg |
-| macOS (Intel) | Anything-Analyzer-3.6.60-x64.dmg |
-| Linux | Anything-Analyzer-3.6.60.AppImage |
+| Windows | Anything-Analyzer-Setup-3.6.61.exe |
+| macOS (Apple Silicon) | Anything-Analyzer-3.6.61-arm64.dmg |
+| macOS (Intel) | Anything-Analyzer-3.6.61-x64.dmg |
+| Linux | Anything-Analyzer-3.6.61.AppImage |

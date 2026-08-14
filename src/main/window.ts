@@ -1,6 +1,7 @@
 import { BrowserWindow, nativeImage } from "electron";
 import { join } from "path";
 import { TabManager } from "./tab-manager";
+import { clampBoundsToContent } from "./window-bounds";
 
 /** Custom titlebar height in renderer (px) */
 const TITLEBAR_HEIGHT = 40;
@@ -206,16 +207,23 @@ export class WindowManager {
   /**
    * Set exact bounds for the active browser tab view.
    * Called by the renderer which measures the actual placeholder position.
+   * Bounds are in DIP and must be clamped to the content area.  Without this,
+   * Windows can preserve a stale oversized native WebContentsView after the
+   * renderer changes layout; the native view then sits above the React toolbar
+   * and consumes Start / Pause / Stop mouse input.
    */
   syncBrowserBounds(bounds: Electron.Rectangle): void {
     const tab = this.tabManager?.getActiveTab();
-    if (tab) {
-      try {
-        if (!tab.view.webContents.isDestroyed()) {
-          tab.view.setBounds(bounds);
-        }
-      } catch { /* view destroyed */ }
-    }
+    if (!tab || !this.mainWindow || !this.targetViewVisible) return;
+
+    const contentBounds = this.mainWindow.getContentBounds();
+    const { x, y, width, height } = clampBoundsToContent(bounds, contentBounds);
+
+    try {
+      if (!tab.view.webContents.isDestroyed()) {
+        tab.view.setBounds({ x, y, width, height });
+      }
+    } catch { /* view destroyed */ }
   }
 
   /**

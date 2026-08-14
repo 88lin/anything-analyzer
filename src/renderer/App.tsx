@@ -220,10 +220,14 @@ function App(): React.ReactElement {
     })
   }, [currentSessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Report exact browser placeholder bounds to main process via ResizeObserver
+  // Report the real browser placeholder bounds to the native WebContentsView.
+  // The placeholder is conditional (it does not exist before a session is selected),
+  // so this effect MUST re-run when its visibility changes. Previously it only ran
+  // on App mount; on Windows the native view retained the fixed fallback bounds and
+  // could overlap the capture controls, swallowing Start/Pause/Stop clicks.
   useEffect(() => {
     const el = placeholderRef.current
-    if (!el) return
+    if (!el || activeView !== 'browser' || !currentSession) return
 
     const reportBounds = () => {
       const rect = el.getBoundingClientRect()
@@ -240,7 +244,7 @@ function App(): React.ReactElement {
     reportBounds()
 
     return () => observer.disconnect()
-  }, [])
+  }, [activeView, currentSession])
 
   // Hide/show browser view based on active view and session
   useEffect(() => {
