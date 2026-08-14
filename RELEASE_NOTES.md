@@ -1,6 +1,9 @@
-# Anything Analyzer v3.6.61
+# Anything Analyzer v3.6.62
 
 ## 修复
+
+- **Windows 开始抓包无状态变化** — 抓包会话现在在 CDP/脚本注入等可选初始化之前立即切换为“运行中”。即使 Windows 的 debugger attach 被浏览器、杀毒软件或其他调试器拖慢，暂停和停止按钮也会立即可用，不再表现为“开始无反应”。
+- **抓包控制错误可见** — 开始、暂停、恢复、停止 IPC 失败时在界面显示错误提示，不再只写到隐藏的开发者控制台。
 
 - **Windows 抓包控制按钮失效** — 修复原生 `WebContentsView` 在会话创建后未重新同步实际占位区域的问题。旧版可能保留过大的原生浏览器边界，覆盖 React 工具栏并吞掉鼠标事件，导致“开始抓包 / 暂停 / 停止”无反应。现在会在会话或视图切换时重新测量并同步边界，并在主进程中限制边界不越过窗口内容区。
 - **控制按钮可点击性回归保护** — 新增原生浏览器边界钳制测试，防止越界的原生视图再次覆盖界面控件。
@@ -22,7 +25,7 @@
 
 | 平台 | 文件 |
 |------|------|
-| Windows | Anything-Analyzer-Setup-3.6.61.exe |
-| macOS (Apple Silicon) | Anything-Analyzer-3.6.61-arm64.dmg |
-| macOS (Intel) | Anything-Analyzer-3.6.61-x64.dmg |
-| Linux | Anything-Analyzer-3.6.61.AppImage |
+| Windows | Anything-Analyzer-Setup-3.6.62.exe |
+| macOS (Apple Silicon) | Anything-Analyzer-3.6.62-arm64.dmg |
+| macOS (Intel) | Anything-Analyzer-3.6.62-x64.dmg |
+| Linux | Anything-Analyzer-3.6.62.AppImage |

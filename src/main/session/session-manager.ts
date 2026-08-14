@@ -181,6 +181,10 @@ export class SessionManager {
     this.currentSessionId = sessionId;
     this.tabManager = tabManager;
 
+    // Publish the state transition before any optional capture setup. The renderer
+    // must never wait for a CDP debugger attach before enabling Pause/Stop.
+    this.sessionsRepo.updateStatus(sessionId, "running");
+
     // Start capture engine
     this.captureEngine.start(sessionId, rendererWebContents);
 
@@ -253,10 +257,20 @@ export class SessionManager {
       this.interactionRecorder.start(sessionId, rendererWebContents);
     }
 
-    // Attach capture pipelines to all existing tabs
+    // Mark the session running BEFORE optional CDP/injection setup.  On Windows
+    // debugger attachment can take a long time (or be held by another debugger);
+    // keeping this update at the end made the renderer look like Start did
+    // nothing and left Pause/Stop disabled indefinitely.
+    this.sessionsRepo.updateStatus(sessionId, "running");
+
+    // Attach capture pipelines in the background.  A failing or slow tab must
+    // not block the capture state machine or make the control buttons inert;
+    // proxy capture remains available while a browser tab retries/gets skipped.
     for (const tab of tabManager.getAllTabs()) {
       if (!tab.view.webContents.isDestroyed()) {
-        await this.attachCaptureToTab(tab.id, tab.view.webContents);
+        void this.attachCaptureToTab(tab.id, tab.view.webContents).catch((err) => {
+          console.warn(`[SessionManager] Capture attach failed for tab ${tab.id}:`, (err as Error).message);
+        });
       }
     }
 
