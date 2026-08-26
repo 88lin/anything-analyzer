@@ -220,10 +220,14 @@ function App(): React.ReactElement {
     })
   }, [currentSessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Report exact browser placeholder bounds to main process via ResizeObserver
+  // Report the real browser placeholder bounds to the native WebContentsView.
+  // The placeholder is conditional (it does not exist before a session is selected),
+  // so this effect MUST re-run when its visibility changes. Previously it only ran
+  // on App mount; on Windows the native view retained the fixed fallback bounds and
+  // could overlap the capture controls, swallowing Start/Pause/Stop clicks.
   useEffect(() => {
     const el = placeholderRef.current
-    if (!el) return
+    if (!el || activeView !== 'browser' || !currentSession) return
 
     const reportBounds = () => {
       const rect = el.getBoundingClientRect()
@@ -240,7 +244,7 @@ function App(): React.ReactElement {
     reportBounds()
 
     return () => observer.disconnect()
-  }, [])
+  }, [activeView, currentSession])
 
   // Hide/show browser view based on active view and session
   useEffect(() => {
@@ -337,6 +341,38 @@ function App(): React.ReactElement {
     await sendFollowUp(currentSessionId, msg)
   }, [currentSessionId, sendFollowUp])
 
+  const handleStartCapture = useCallback(() => {
+    void startCapture().catch((err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('Start capture failed:', err)
+      toast.error(`${t('capture.start')}失败：${message}`)
+    })
+  }, [startCapture, toast, t])
+
+  const handlePauseCapture = useCallback(() => {
+    void pauseCapture().catch((err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('Pause capture failed:', err)
+      toast.error(`${t('capture.pause')}失败：${message}`)
+    })
+  }, [pauseCapture, toast, t])
+
+  const handleResumeCapture = useCallback(() => {
+    void resumeCapture().catch((err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('Resume capture failed:', err)
+      toast.error(`${t('capture.resume')}失败：${message}`)
+    })
+  }, [resumeCapture, toast, t])
+
+  const handleStopCapture = useCallback(() => {
+    void stopCapture().catch((err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('Stop capture failed:', err)
+      toast.error(`${t('capture.stop')}失败：${message}`)
+    })
+  }, [stopCapture, toast, t])
+
   // Pill button style for capture controls in browser address bar
   const pillStyle: React.CSSProperties = {
     padding: '5px 14px',
@@ -362,7 +398,7 @@ function App(): React.ReactElement {
     if (!currentSession?.status || currentSession.status === 'stopped') {
       return (
         <>
-          <button style={pillStart} onClick={startCapture}>● {t('browser.start')}</button>
+          <button style={pillStart} onClick={handleStartCapture}>● {t('browser.start')}</button>
           <button style={pillDisabled}>⏸ {t('browser.pause')}</button>
           <button style={pillDisabled}>■ {t('browser.stop')}</button>
         </>
@@ -372,8 +408,8 @@ function App(): React.ReactElement {
       return (
         <>
           <button style={pillActive}>● {t('browser.start')}</button>
-          <button style={pillPause} onClick={pauseCapture}>⏸ {t('browser.pause')}</button>
-          <button style={pillStop} onClick={stopCapture}>■ {t('browser.stop')}</button>
+          <button style={pillPause} onClick={handlePauseCapture}>⏸ {t('browser.pause')}</button>
+          <button style={pillStop} onClick={handleStopCapture}>■ {t('browser.stop')}</button>
         </>
       )
     }
@@ -381,8 +417,8 @@ function App(): React.ReactElement {
       return (
         <>
           <button style={pillPauseActive}>⏸ {t('browser.pause')}</button>
-          <button style={pillStart} onClick={resumeCapture}>▶ {t('browser.resume')}</button>
-          <button style={pillStop} onClick={stopCapture}>■ {t('browser.stop')}</button>
+          <button style={pillStart} onClick={handleResumeCapture}>▶ {t('browser.resume')}</button>
+          <button style={pillStop} onClick={handleStopCapture}>■ {t('browser.stop')}</button>
         </>
       )
     }
