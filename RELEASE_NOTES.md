@@ -1,6 +1,12 @@
-# Anything Analyzer v3.6.62
+# Anything Analyzer v3.6.63
 
 ## 修复
+
+- **内置浏览器遮挡其他标签页** — 修复原生 `WebContentsView` 在浏览器视图不可见时（Inspector / Report 页、未打开会话、设置弹窗打开）仍会被窗口缩放、最大化或还原重新撑满、完全遮挡界面的问题。`TabManager.updateBounds()` 现在会先检查浏览器区域可见性，不可见时保持 0×0 隐藏边界，不再写入计算出的全尺寸边界。
+- **切换标签页时隐藏全部非活动视图** — 之前只隐藏上一个活动视图，残留的其他视图仍可能在窗口尺寸变化时重新铺满。现在切换标签页会隐藏所有非活动原生视图。
+- **原生视图改为 fail-closed** — 主进程的视图可见状态初值改为不可见，原生视图只在渲染进程明确请求后显示，启动瞬间不再先显示再隐藏。
+- **恢复浏览器页时使用实测边界** — 主进程记录渲染进程上报并钳制后的边界，重新显示时优先使用实测值，避免 IPC 顺序导致的“用估算边界显示”。
+- **边界写入收敛为单一入口** — 所有可见边界写入统一经过 `TabManager.setTabBounds()`，并把“浏览器区域不可见时任何视图都不得有非零边界”作为 `TabManager` 的不变量，避免同类遮挡问题再次出现。
 
 - **Windows 开始抓包无状态变化** — 抓包会话现在在 CDP/脚本注入等可选初始化之前立即切换为“运行中”。即使 Windows 的 debugger attach 被浏览器、杀毒软件或其他调试器拖慢，暂停和停止按钮也会立即可用，不再表现为“开始无反应”。
 - **抓包控制错误可见** — 开始、暂停、恢复、停止 IPC 失败时在界面显示错误提示，不再只写到隐藏的开发者控制台。
@@ -15,17 +21,16 @@
 
 ## 验证
 
-- 新增超大 Claude 工具结果截断回归测试。
-- 新增工具轮次达到上限后生成最终回答的回归测试。
-- 新增 Claude 默认连续 12 轮工具调用回归测试。
-- 全量测试通过：182 passed，4 skipped。
+- 新增 `TabManager` 原生视图可见性回归测试（7 项）：不可见时创建标签页保持隐藏、隐藏后重复 `updateBounds` 仍为隐藏、切换标签页至多一个可见视图等。
+- 新增 `WindowManager` 原生视图可见性回归测试（7 项）：覆盖本问题的核心路径——隐藏原生视图后窗口 resize 不再将其撑满。
+- 全量测试通过：25 个测试文件，199 passed，4 skipped。
 - Electron 生产构建通过。
 
 ## 下载
 
 | 平台 | 文件 |
 |------|------|
-| Windows | Anything-Analyzer-Setup-3.6.62.exe |
-| macOS (Apple Silicon) | Anything-Analyzer-3.6.62-arm64.dmg |
-| macOS (Intel) | Anything-Analyzer-3.6.62-x64.dmg |
-| Linux | Anything-Analyzer-3.6.62.AppImage |
+| Windows | Anything-Analyzer-Setup-3.6.63.exe |
+| macOS (Apple Silicon) | Anything-Analyzer-3.6.63-arm64.dmg |
+| macOS (Intel) | Anything-Analyzer-3.6.63-x64.dmg |
+| Linux | Anything-Analyzer-3.6.63.AppImage |
