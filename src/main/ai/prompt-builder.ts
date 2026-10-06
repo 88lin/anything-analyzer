@@ -73,9 +73,10 @@ export class PromptBuilder {
       ? "\n你可以使用 list_requests / search_requests / get_request_detail 工具按需缩小范围并查看请求详情。首轮上下文仅提供请求索引，不要假设正文已内联；信息不足时主动调用工具。"
       : "";
     const captureToolHint = "\n需要还原用户具体元素操作或检查未关联请求的 JS 调用时，主动使用 read_session_interactions / read_session_hooks。";
+    const skillToolHint = "\n应用内置了逆向/安全方法论技能库（reverse-skill）：涉及请求签名与加密、鉴权与越权、JS 混淆与 Webpack 拆包、协议还原、移动端/扩展逆向、证据-结论链与报告结构时，先用 list_skills 看目录、再用 search_skills 定位、最后用 read_skill 读原文（如 js-reverse/SKILL.md、api-security/SKILL.md、ops/…），并按其方法论组织结论。若这些工具不可用则忽略本段。";
 
     const system = (template?.systemPrompt
-      || `你是一位网站协议分析专家。你的任务是分析用户在网站上的操作过程中产生的HTTP请求、JS调用和存储变化，识别其业务场景，并生成结构化的协议分析报告。Be precise and technical. Output in Chinese (Simplified).`) + toolHint + captureToolHint;
+      || `你是一位网站协议分析专家。你的任务是分析用户在网站上的操作过程中产生的HTTP请求、JS调用和存储变化，识别其业务场景，并生成结构化的协议分析报告。Be precise and technical. Output in Chinese (Simplified).`) + toolHint + captureToolHint + skillToolHint;
 
     const analysisRequirements = template?.requirements
       || this.buildAnalysisRequirements(purpose);
@@ -120,7 +121,8 @@ ${analysisRequirements}
 3. 使用 get_request_detail 按需拉取 1~5 条详情，再继续分析
 4. 需要还原用户点击、输入、滚动及目标元素时，使用 read_session_interactions
 5. 需要查看独立 JS Hook 参数、结果或调用栈时，使用 read_session_hooks
-6. 不要编造未通过工具确认的请求体或响应体字段`;
+6. 需要方法论支撑（签名/加密还原、鉴权越权、JS 混淆、报告结构）时，用 list_skills / search_skills / read_skill 查阅内置技能库，不要凭空编造分析套路
+7. 不要编造未通过工具确认的请求体或响应体字段`;
       return { system, user };
     }
 

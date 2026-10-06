@@ -30,6 +30,7 @@ import {
 } from "./context-budget";
 import { BUILTIN_REQUEST_TOOLS, dispatchBuiltinRequestTool } from "./request-tools";
 import { BUILTIN_CAPTURE_TOOLS, dispatchBuiltinCaptureTool } from "./capture-tools";
+import { BUILTIN_SKILL_TOOLS, dispatchBuiltinSkillTool, hasSkillLibrary } from "./skill-tools";
 import { loadTokenCalibration, saveTokenCalibration } from "./token-calibration-store";
 import { SubagentAnalyzer } from "./subagent-analyzer";
 import {
@@ -143,6 +144,16 @@ export class AiAnalyzer {
         );
         return captureBuiltin.result;
       }
+      const skillBuiltin = dispatchBuiltinSkillTool(name, args);
+      if (skillBuiltin) {
+        recordToolSessionActivity(
+          sessionId,
+          reportId,
+          skillBuiltin.fetchedSeqs,
+          skillBuiltin.refLine,
+        );
+        return skillBuiltin.result;
+      }
       if (this.mcpManager) return this.mcpManager.callTool(name, args);
       throw new Error(`Tool not found: ${name}`);
     };
@@ -152,6 +163,7 @@ export class AiAnalyzer {
     const builtinTools = [
       ...(hasRequests ? BUILTIN_REQUEST_TOOLS : []),
       ...BUILTIN_CAPTURE_TOOLS,
+      ...(hasSkillLibrary() ? BUILTIN_SKILL_TOOLS : []),
     ];
     const mcpTools = this.mcpManager?.hasConnections() ? this.mcpManager.listAllTools() : [];
     return [...builtinTools, ...mcpTools];
