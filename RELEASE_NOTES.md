@@ -1,36 +1,24 @@
-# Anything Analyzer v3.6.63
+# Anything Analyzer v3.7.0
 
-## 修复
+## 新增
 
-- **内置浏览器遮挡其他标签页** — 修复原生 `WebContentsView` 在浏览器视图不可见时（Inspector / Report 页、未打开会话、设置弹窗打开）仍会被窗口缩放、最大化或还原重新撑满、完全遮挡界面的问题。`TabManager.updateBounds()` 现在会先检查浏览器区域可见性，不可见时保持 0×0 隐藏边界，不再写入计算出的全尺寸边界。
-- **切换标签页时隐藏全部非活动视图** — 之前只隐藏上一个活动视图，残留的其他视图仍可能在窗口尺寸变化时重新铺满。现在切换标签页会隐藏所有非活动原生视图。
-- **原生视图改为 fail-closed** — 主进程的视图可见状态初值改为不可见，原生视图只在渲染进程明确请求后显示，启动瞬间不再先显示再隐藏。
-- **恢复浏览器页时使用实测边界** — 主进程记录渲染进程上报并钳制后的边界，重新显示时优先使用实测值，避免 IPC 顺序导致的“用估算边界显示”。
-- **边界写入收敛为单一入口** — 所有可见边界写入统一经过 `TabManager.setTabBounds()`，并把“浏览器区域不可见时任何视图都不得有非零边界”作为 `TabManager` 的不变量，避免同类遮挡问题再次出现。
-
-- **Windows 开始抓包无状态变化** — 抓包会话现在在 CDP/脚本注入等可选初始化之前立即切换为“运行中”。即使 Windows 的 debugger attach 被浏览器、杀毒软件或其他调试器拖慢，暂停和停止按钮也会立即可用，不再表现为“开始无反应”。
-- **抓包控制错误可见** — 开始、暂停、恢复、停止 IPC 失败时在界面显示错误提示，不再只写到隐藏的开发者控制台。
-
-- **Windows 抓包控制按钮失效** — 修复原生 `WebContentsView` 在会话创建后未重新同步实际占位区域的问题。旧版可能保留过大的原生浏览器边界，覆盖 React 工具栏并吞掉鼠标事件，导致“开始抓包 / 暂停 / 停止”无反应。现在会在会话或视图切换时重新测量并同步边界，并在主进程中限制边界不越过窗口内容区。
-- **控制按钮可点击性回归保护** — 新增原生浏览器边界钳制测试，防止越界的原生视图再次覆盖界面控件。
-
-- **Claude 工具上下文溢出** — 工具调用结果现在按上下文 token 预算统一限长，避免详情、Interactions 或第三方 MCP 返回大段数据后撑满模型窗口。
-- **工具链上下文预留** — 进入工具循环前主动压缩初始消息，为后续工具结果和模型输出保留稳定空间。
-- **工具轮次执行** — 默认安全上限由 10 轮提升至 64 轮，复杂分析可以持续调用工具；达到上限后要求模型基于已有结果生成最终回答。
-- **多协议一致性** — OpenAI Chat Completions、Anthropic Messages 和 OpenAI Responses API 统一应用工具结果预算与轮次保护。
+- **内置逆向 / 安全方法论技能库** — 应用现在内置 reverse-skill 方法论技能库（72 个文件，约 632 KB），随安装包分发到安装目录的 `resources/skills/reverse-skill/`，开箱即用，无需联网下载或额外安装。
+- **AI 可按需查阅技能库** — 新增三个只读工具：`list_skills` 查看技能目录、`search_skills` 全文检索、`read_skill` 按行读取原文。技能内容按需渐进加载，不会挤占首轮上下文。
+- **分析与追问两条链路均已接入** — 首轮分析的系统提示会引导模型在遇到请求签名与加密、鉴权与越权、JS 混淆与 Webpack 拆包、协议还原、证据-结论链与报告结构等问题时主动查阅技能库；追问（chat）沿用同一套工具路由，可继续沿用同一套方法论。
+- **安全边界** — 技能工具拒绝绝对路径与 `../` 目录穿越，只允许读取白名单文本扩展名，单文件与单次扫描均有限长；技能库缺失时工具静默降级，不影响正常分析。
+- **覆盖模块** — `reverse-engineering`、`js-reverse`、`api-security`、`protocol-reverse`、`code-audit`、`browser-extension-reverse`、`docs-generator`、`ops`，以及 `field-journal` 实战案例库。
+- **来源与许可** — 内容取自 [zhaoxuya520/reverse-skill](https://github.com/zhaoxuya520/reverse-skill) v1.0.1（commit `cab634bd`），MIT 许可，逐字保留；来源、校验与更新方式见 `resources/skills/reverse-skill/INSTALLED.md`。
 
 ## 验证
 
-- 新增 `TabManager` 原生视图可见性回归测试（7 项）：不可见时创建标签页保持隐藏、隐藏后重复 `updateBounds` 仍为隐藏、切换标签页至多一个可见视图等。
-- 新增 `WindowManager` 原生视图可见性回归测试（7 项）：覆盖本问题的核心路径——隐藏原生视图后窗口 resize 不再将其撑满。
-- 全量测试通过：25 个测试文件，199 passed，4 skipped。
-- Electron 生产构建通过。
+- 新增 `tests/main/ai/skill-tools.test.ts`，26 项全部通过：覆盖 frontmatter 解析、目录列举与过滤、全文检索、分页读取、路径穿越与绝对路径拒绝、技能库缺失降级，以及针对真实技能库的端到端校验。
+- Electron 生产构建通过；`electron-builder` 打包产物确认包含 `resources/skills/reverse-skill/`（72 个文件），技能库未被打入 `app.asar`。
 
 ## 下载
 
 | 平台 | 文件 |
 |------|------|
-| Windows | Anything-Analyzer-Setup-3.6.63.exe |
-| macOS (Apple Silicon) | Anything-Analyzer-3.6.63-arm64.dmg |
-| macOS (Intel) | Anything-Analyzer-3.6.63-x64.dmg |
-| Linux | Anything-Analyzer-3.6.63.AppImage |
+| Windows | Anything-Analyzer-Setup-3.7.0.exe |
+| macOS (Apple Silicon) | Anything-Analyzer-3.7.0-arm64.dmg |
+| macOS (Intel) | Anything-Analyzer-3.7.0-x64.dmg |
+| Linux | Anything-Analyzer-3.7.0.AppImage |
