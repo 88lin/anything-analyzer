@@ -76,6 +76,17 @@ function App(): React.ReactElement {
     return text
   }, [appLocale]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * Show/hide the native browser view.
+   * The native WebContentsView paints above the renderer DOM, so a failed or
+   * skipped toggle would leave it covering the Inspector / Report page.
+   */
+  const setBrowserViewVisible = useCallback((visible: boolean) => {
+    void window.electronAPI.setTargetViewVisible(visible).catch((err) => {
+      console.error('Failed to toggle native browser view visibility:', err)
+    })
+  }, [])
+
   const handleThemeChange = useCallback((themeId: string) => {
     setAppTheme(themeId)
     localStorage.setItem('app-theme', themeId)
@@ -105,15 +116,15 @@ function App(): React.ReactElement {
 
   const openSettings = useCallback(() => {
     setSettingsOpen(true)
-    window.electronAPI.setTargetViewVisible(false)
-  }, [])
+    setBrowserViewVisible(false)
+  }, [setBrowserViewVisible])
 
   const closeSettings = useCallback(() => {
     setSettingsOpen(false)
     if (activeView === 'browser' && currentSession) {
-      window.electronAPI.setTargetViewVisible(true)
+      setBrowserViewVisible(true)
     }
-  }, [activeView, currentSession])
+  }, [activeView, currentSession, setBrowserViewVisible])
 
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null)
   const [selectedSeqs, setSelectedSeqs] = useState<number[]>([])
@@ -246,14 +257,16 @@ function App(): React.ReactElement {
     return () => observer.disconnect()
   }, [activeView, currentSession])
 
-  // Hide/show browser view based on active view and session
+  // Hide/show browser view based on active view and session.
+  // Declared after the bounds effect on purpose: React runs effects in order, so
+  // the placeholder rectangle is reported to the main process first and can be
+  // reused when the native view becomes visible again.
+  // A rejected IPC must not silently leave the native view on top of the
+  // Inspector / Report page, so failures are surfaced instead of swallowed.
   useEffect(() => {
-    if (activeView === 'browser' && currentSession) {
-      window.electronAPI.setTargetViewVisible(true)
-    } else {
-      window.electronAPI.setTargetViewVisible(false)
-    }
-  }, [activeView, currentSession])
+    const visible = activeView === 'browser' && Boolean(currentSession)
+    setBrowserViewVisible(visible)
+  }, [activeView, currentSession, setBrowserViewVisible])
 
   // Browser navigation handlers
   const handleNavigate = useCallback(async (url: string) => {
@@ -302,11 +315,11 @@ function App(): React.ReactElement {
   // Clear browser environment (with confirmation)
   // Hide native WebContentsView so the confirm dialog is not obscured
   const handleClearEnv = useCallback(async () => {
-    window.electronAPI.setTargetViewVisible(false)
+    setBrowserViewVisible(false)
     const ok = await confirm(t('data.clearEnvConfirm'), { okText: t('data.clear') })
     if (!ok) {
       if (activeView === 'browser' && currentSession) {
-        window.electronAPI.setTargetViewVisible(true)
+        setBrowserViewVisible(true)
       }
       return
     }
@@ -318,9 +331,9 @@ function App(): React.ReactElement {
       toast.error(t('toast.envClearFailed'))
     }
     if (activeView === 'browser' && currentSession) {
-      window.electronAPI.setTargetViewVisible(true)
+      setBrowserViewVisible(true)
     }
-  }, [toast, confirm, t, activeView, currentSession])
+  }, [toast, confirm, t, activeView, currentSession, setBrowserViewVisible])
 
   // Clear capture data for re-analysis
   const handleClearData = useCallback(async () => {

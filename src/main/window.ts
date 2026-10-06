@@ -17,8 +17,19 @@ export class WindowManager {
   private tabManager: TabManager | null = null;
   /** Browser area height ratio (0.0 ~ 1.0), default 70% */
   private browserRatio = 0.7;
-  /** Whether the browser view should be visible */
-  private targetViewVisible = true;
+  /**
+   * Whether the browser view should be visible. Starts `false` so the native
+   * view can only ever appear after the renderer explicitly asks for it: the
+   * WebContentsView paints above the renderer DOM, so showing it too early
+   * covers whatever page the renderer is displaying.
+   */
+  private targetViewVisible = false;
+  /**
+   * Last placeholder rectangle measured by the renderer. Kept even while the
+   * view is hidden, because on the way back to the Browser page the renderer
+   * reports bounds before `browser:setVisible` is handled.
+   */
+  private lastReportedBounds: Electron.Rectangle | null = null;
 
   /**
    * Create the main application window.
@@ -147,19 +158,38 @@ export class WindowManager {
   setTargetViewVisible(visible: boolean): void {
     this.targetViewVisible = visible;
     if (!this.mainWindow || !this.tabManager) return;
-    const activeTab = this.tabManager.getActiveTab();
-    if (!activeTab) return;
+
+    if (!visible) {
+      // Hide EVERY tab view, not just the active one. The native view always
+      // paints above the renderer, so one stale view left visible by an earlier
+      // race completely covers the Inspector / Report pages.
+      this.tabManager.hideAllTabs();
+      return;
+    }
+
+    this.applyBrowserBounds();
+  }
+
+  /**
+   * Apply the best known bounds to the active tab view.
+   * Prefers the renderer-measured placeholder rectangle over the fixed layout
+   * fallback, which is only an estimate of the toolbar/tab-bar heights.
+   */
+  private applyBrowserBounds(): void {
+    const tab = this.tabManager?.getActiveTab();
+    if (!tab || !this.mainWindow) return;
+
+    const contentBounds = this.mainWindow.getContentBounds();
+    const target = clampBoundsToContent(
+      this.lastReportedBounds ?? this.calculateTargetBounds(),
+      contentBounds,
+    );
 
     try {
-      if (activeTab.view.webContents.isDestroyed()) return;
-      if (visible) {
-        this.tabManager.updateBounds();
-      } else {
-        activeTab.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+      if (!tab.view.webContents.isDestroyed()) {
+        tab.view.setBounds(target);
       }
-    } catch {
-      /* View may have been destroyed during operation — safe to ignore */
-    }
+    } catch { /* view destroyed */ }
   }
 
   /**
@@ -211,17 +241,24 @@ export class WindowManager {
    * Windows can preserve a stale oversized native WebContentsView after the
    * renderer changes layout; the native view then sits above the React toolbar
    * and consumes Start / Pause / Stop mouse input.
+   *
+   * The measurement is remembered even while the view is hidden: the renderer
+   * reports bounds before `browser:setVisible(true)` is handled (it uses `send`
+   * while visibility uses `invoke`), and dropping the report used to leave the
+   * view at the guessed fallback bounds when returning to the Browser page.
    */
   syncBrowserBounds(bounds: Electron.Rectangle): void {
     const tab = this.tabManager?.getActiveTab();
-    if (!tab || !this.mainWindow || !this.targetViewVisible) return;
+    if (!tab || !this.mainWindow) return;
 
     const contentBounds = this.mainWindow.getContentBounds();
-    const { x, y, width, height } = clampBoundsToContent(bounds, contentBounds);
+    this.lastReportedBounds = clampBoundsToContent(bounds, contentBounds);
+
+    if (!this.targetViewVisible) return;
 
     try {
       if (!tab.view.webContents.isDestroyed()) {
-        tab.view.setBounds({ x, y, width, height });
+        tab.view.setBounds(this.lastReportedBounds);
       }
     } catch { /* view destroyed */ }
   }
@@ -239,5 +276,7 @@ export class WindowManager {
   destroyTargetView(): void {
     this.tabManager?.destroyEverything();
     this.tabManager = null;
+    this.lastReportedBounds = null;
+    this.targetViewVisible = false;
   }
 }

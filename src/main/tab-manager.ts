@@ -267,7 +267,7 @@ export class TabManager extends EventEmitter {
   }
 
   /**
-   * Switch the active tab. Hides the old tab (zero bounds) and shows the new one.
+   * Switch the active tab. Hides the other tabs (zero bounds) and shows the new one.
    * Views are never removed/re-added — only bounds change — to avoid
    * blink.mojom.WidgetHost Mojo IPC crashes.
    */
@@ -276,28 +276,20 @@ export class TabManager extends EventEmitter {
     const tab = this.tabs.get(tabId);
     if (!tab) return;
 
-    // Hide the previous active tab by setting zero bounds
-    if (this.activeTabId && this.activeTabId !== tabId) {
-      const oldTab = this.tabs.get(this.activeTabId);
-      if (oldTab) {
-        try {
-          oldTab.view.setBounds(TabManager.HIDDEN_BOUNDS);
-        } catch { /* view destroyed */ }
-      }
+    // Hide every other view in the group — not only the previously active one.
+    // A single stale visible native view is enough to cover the whole renderer,
+    // so "at most one visible view" is enforced here rather than at each caller.
+    for (const [id, other] of this.tabs) {
+      if (id !== tabId) this.setTabBounds(other, TabManager.HIDDEN_BOUNDS);
     }
 
     this.activeTabId = tabId;
 
     // Show the new tab with proper bounds (or hide if browser area is invisible)
-    const shouldShow = this.visibilityChecker ? this.visibilityChecker() : true;
-    if (shouldShow && this.boundsCalculator) {
-      try {
-        tab.view.setBounds(this.boundsCalculator());
-      } catch { /* view may have been destroyed */ }
+    if (this.isBrowserAreaVisible() && this.boundsCalculator) {
+      this.setTabBounds(tab, this.boundsCalculator());
     } else {
-      try {
-        tab.view.setBounds(TabManager.HIDDEN_BOUNDS);
-      } catch { /* view destroyed */ }
+      this.setTabBounds(tab, TabManager.HIDDEN_BOUNDS);
     }
 
     this.emit("tab-activated", { tabId, url: tab.url, title: tab.title });
@@ -305,17 +297,47 @@ export class TabManager extends EventEmitter {
 
   /**
    * Update bounds on the active tab (e.g., on window resize).
+   *
+   * MUST respect the visibility checker. WebContentsView always paints above the
+   * renderer DOM, so a resize while the Inspector / Report page is on screen used
+   * to re-expand the hidden native view to full size and cover that entire page.
    */
   updateBounds(): void {
-    if (!this.activeTabId || !this.boundsCalculator) return;
-    const tab = this.tabs.get(this.activeTabId);
-    if (tab) {
-      try {
-        if (!tab.view.webContents.isDestroyed()) {
-          tab.view.setBounds(this.boundsCalculator());
-        }
-      } catch { /* view destroyed */ }
+    if (!this.boundsCalculator) return;
+    const tab = this.activeTabId ? this.tabs.get(this.activeTabId) : null;
+    if (!tab) return;
+
+    if (!this.isBrowserAreaVisible()) {
+      this.setTabBounds(tab, TabManager.HIDDEN_BOUNDS);
+      return;
     }
+    this.setTabBounds(tab, this.boundsCalculator());
+  }
+
+  /**
+   * Move every tab view in the current group to the hidden rectangle.
+   *
+   * Hiding all of them — not just the active one — makes "hidden" an invariant:
+   * any single view left with stale visible bounds covers the renderer entirely.
+   */
+  hideAllTabs(): void {
+    for (const [, tab] of this.tabs) {
+      this.setTabBounds(tab, TabManager.HIDDEN_BOUNDS);
+    }
+  }
+
+  /** Whether the native browser area is currently meant to be visible. */
+  private isBrowserAreaVisible(): boolean {
+    return this.visibilityChecker ? this.visibilityChecker() : true;
+  }
+
+  /** Apply bounds to a tab view, tolerating a destroyed webContents. */
+  private setTabBounds(tab: TabInfo, bounds: Electron.Rectangle): void {
+    try {
+      if (!tab.view.webContents.isDestroyed()) {
+        tab.view.setBounds(bounds);
+      }
+    } catch { /* view destroyed */ }
   }
 
   getActiveTab(): TabInfo | null {
